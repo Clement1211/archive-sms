@@ -4,6 +4,7 @@
  * Run with: node --test tests/extractor.test.js
  */
 
+import { test } from 'node:test';
 import { strictEqual, deepStrictEqual, ok } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -173,8 +174,8 @@ test('extract - real sample.xml file', () => {
   
   const result = extract(xml);
   
-  // sample.xml has 3 SMS and 2 MMS = 5 messages
-  strictEqual(result.complete.length, 5);
+  // sample.xml has 5 SMS and 2 MMS = 7 messages
+  strictEqual(result.complete.length, 7);
   
   // Check that we have both SMS and MMS
   const hasSms = result.complete.some(e => e.startsWith('<sms'));

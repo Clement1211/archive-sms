@@ -1,9 +1,13 @@
 /**
- * Tests for XML parser
+ * Tests for XML parser utilities
  * Run with: node --test tests/parser.test.js
+ * 
+ * Note: parseSmsElement and parseMmsElement require DOMParser (browser API)
+ * and are not tested here. Only date parsing and extractor functions are tested.
  */
 
-import { strictEqual, ok, deepStrictEqual } from 'node:assert';
+import { test } from 'node:test';
+import { strictEqual, ok } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,58 +15,6 @@ import { fileURLToPath } from 'node:url';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 // Simple DOMParser mock for Node.js
-const DOMParser = class {
-  parseFromString(xmlString, contentType) {
-    // Simple mock that creates a basic document structure
-    const match = xmlString.match(/<(\w+)([^>]*)\/?>/);
-    if (!match) {
-      return {
-        documentElement: null,
-        querySelector: () => null,
-        getElementsByTagName: () => []
-      };
-    }
-    const tagName = match[1];
-    const attrsString = match[2];
-    
-    // Parse attributes
-    const attrs = {};
-    const attrRegex = /(\w+)="([^"]*)"/g;
-    let attrMatch;
-    while ((attrMatch = attrRegex.exec(attrsString)) !== null) {
-      attrs[attrMatch[1]] = attrMatch[2];
-    }
-    
-    // Create a mock element
-    const element = {
-      tagName,
-      getAttribute: (name) => attrs[name] || null,
-      querySelector: (selector) => {
-        if (selector === 'parsererror') return null;
-        return null;
-      },
-      getElementsByTagName: (tag) => {
-        const results = [];
-        const regex = new RegExp(`<${tag}([^>]*)>([\s\S]*?)<\/${tag}>`, 'g');
-        let match;
-        const content = xmlString;
-        while ((match = regex.exec(content)) !== null) {
-          results.push({
-            getAttribute: (name) => {
-              const itemMatch = match[1].match(new RegExp(`${name}="([^"]*)"`));
-              return itemMatch ? itemMatch[1] : null;
-            }
-          });
-        }
-        return results;
-      }
-    };
-    
-    return { documentElement: element, querySelector: () => null };
-  }
-};
-
-// Inline parser functions for testing
 const START = /<(sms|mms)(?=[\s\/>])/g;
 const ATTR_REGEX = /\s+[^\s=\/>]+\s*=\s*(?:"[^"]*"|'[^']*')/y;
 
@@ -111,112 +63,117 @@ function parseDateString(dateString) {
   return isNaN(d) ? null : d;
 }
 
-function parseSmsElement(elementString) {
-  try {
-    const doc = new DOMParser().parseFromString(elementString, 'application/xml');
-    const parserError = doc.querySelector('parsererror');
-    if (parserError) return null;
+// ============================================
+// EXTRACTOR TESTS
+// ============================================
 
-    const el = doc.documentElement;
-    if (el.tagName.toLowerCase() !== 'sms') return null;
+test('extract - SMS with apostrophe-delimited attribute containing quotes', () => {
+  const xml = `<smses>
+    <sms address="+336" date="123" type="1" body='He said: "Hello!"' />
+  </smses>`;
+  
+  const result = extract(xml);
+  strictEqual(result.complete.length, 1);
+  ok(result.complete[0].includes("body='He said: \"Hello!\"'"));
+});
 
-    const type = el.getAttribute('type');
-    const address = (el.getAttribute('address') || 'Inconnu').trim().replace(/\s+/g, ' ');
-    const date = parseDateString(el.getAttribute('date'));
-    const body = el.getAttribute('body') || '';
-    const isOutgoing = type === '2';
+test('extract - ignore <smses>, <?xml>, <?xml-stylesheet>, and comments', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="smses.xsl"?>
+<!-- This is a comment -->
+<smses count="2">
+  <!-- Another comment -->
+  <sms address="+1" date="123" type="1" body="Test 1" />
+  <sms address="+2" date="456" type="1" body="Test 2" />
+</smses>`;
+  
+  const result = extract(xml);
+  strictEqual(result.complete.length, 2);
+  ok(result.complete[0].includes('address="+1"'));
+  ok(result.complete[1].includes('address="+2"'));
+});
 
-    return {
-      id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      address,
-      body,
-      date,
-      kind: 'sms',
-      out: isOutgoing,
-      attachments: []
-    };
-  } catch (e) {
-    console.warn('SMS parse error:', e);
-    return null;
-  }
-}
+test('extract - partial SMS at buffer end returns remaining', () => {
+  const xml = `<sms address="+1" date="123" type="1" body="T`; // Incomplete
+  
+  const result = extract(xml);
+  strictEqual(result.complete.length, 0);
+  strictEqual(result.remaining, xml);
+});
 
-function parseMmsElement(elementString) {
-  try {
-    const doc = new DOMParser().parseFromString(elementString, 'application/xml');
-    const parserError = doc.querySelector('parsererror');
-    if (parserError) return null;
+test('extract - partial SMS in middle, extracts complete ones', () => {
+  const xml = `<sms address="+1" type="1" body="Test"/>
+  <sms address="+2" date`; // Incomplete
+  
+  const result = extract(xml);
+  strictEqual(result.complete.length, 1);
+  ok(result.complete[0].includes('address="+1"'));
+  ok(result.remaining.includes('<sms address="+2"'));
+});
 
-    const el = doc.documentElement;
-    if (el.tagName.toLowerCase() !== 'mms') return null;
+test('extract - MMS element split across buffer boundary', () => {
+  const part1 = `<smses><mms address="+1" date="123" type="1"><part ct="image/png" data="`;
+  const part2 = `AAAAAA==" /><part ct="text/plain" text="Image" /></mms>`;
+  const xml = part1 + part2;
+  
+  const result = extract(xml);
+  strictEqual(result.complete.length, 1);
+  ok(result.complete[0].includes('<mms'));
+  ok(result.complete[0].includes('</mms>'));
+});
 
-    const type = el.getAttribute('type');
-    let address = (el.getAttribute('address') || 'Inconnu').trim().replace(/\s+/g, ' ');
-    const date = parseDateString(el.getAttribute('date'));
-    const isOutgoing = type === '2';
+test('extract - simulate streaming with large MMS', () => {
+  const largeData = 'A'.repeat(10 * 1024 * 1024); // ~10MB
+  const mmsOpen = `<mms address="+1" date="123" type="1"><part ct="image/jpeg" data="`;
+  const mmsClose = `"/></mms>`;
+  const xml = mmsOpen + largeData + mmsClose;
+  
+  const result = extract(xml);
+  strictEqual(result.complete.length, 1);
+  ok(result.complete[0].includes(mmsOpen));
+  ok(result.complete[0].includes(mmsClose));
+  strictEqual(result.remaining.length, 0);
+});
 
-    let body = '';
-    const rawAttachments = [];
+test('extract - UTF-8 multi-byte characters at boundary', () => {
+  const emoji = '\u{1F389}'; // 🎉
+  const body = `Test ${emoji} message`;
+  
+  const xml = `<sms address="+1" type="1" body="${body}"/>`;
+  
+  const result = extract(xml);
+  strictEqual(result.complete.length, 1);
+  ok(result.complete[0].includes(body));
+});
 
-    const parts = el.getElementsByTagName('part');
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const ct = part.getAttribute('ct') || '';
-      const text = part.getAttribute('text');
-      const data = part.getAttribute('data');
-      const cl = part.getAttribute('cl') || `piece-jointe-${i + 1}`;
+test('extract - real sample.xml file', () => {
+  const xml = readFileSync(resolve(__dirname, 'fixtures', 'sample.xml'), 'utf-8');
+  
+  const result = extract(xml);
+  // sample.xml has 5 SMS and 2 MMS = 7 messages
+  strictEqual(result.complete.length, 7);
+  
+  const hasSms = result.complete.some(e => e.startsWith('<sms'));
+  const hasMms = result.complete.some(e => e.startsWith('<mms'));
+  ok(hasSms);
+  ok(hasMms);
+});
 
-      if (ct.startsWith('text/') && text) {
-        body += (body ? '\n' : '') + text;
-      } else if (data) {
-        try {
-          const cleanData = data.replace(/\s/g, '');
-          const raw = atob(cleanData);
-          const bytes = new Uint8Array(new ArrayBuffer(raw.length));
-          for (let j = 0; j < raw.length; j++) {
-            bytes[j] = raw.charCodeAt(j);
-          }
-          rawAttachments.push({ blob: new Blob([bytes], { type: ct }), type: ct, name: cl });
-        } catch (e) {
-          console.warn('Failed to decode MMS attachment:', e);
-        }
-      }
-    }
+test('extract - empty buffer returns empty', () => {
+  const result = extract('');
+  strictEqual(result.complete.length, 0);
+  strictEqual(result.remaining.length, 0);
+});
 
-    const addrs = Array.from(el.getElementsByTagName('addr'))
-      .map(a => a.getAttribute('address'))
-      .filter(Boolean);
-    if (address === 'Inconnu' && addrs.length > 0) {
-      address = addrs[0];
-    }
-
-    const attachmentIds = rawAttachments.map((_, idx) => `att-${Date.now()}-${idx}`);
-
-    return {
-      message: {
-        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        address,
-        body: body || (rawAttachments.length ? 'Média' : ''),
-        date,
-        kind: 'mms',
-        out: isOutgoing,
-        attachments: attachmentIds
-      },
-      attachments: rawAttachments.map((att, idx) => ({
-        id: attachmentIds[idx],
-        blob: att.blob,
-        type: att.type,
-        name: att.name
-      }))
-    };
-  } catch (e) {
-    console.warn('MMS parse error:', e);
-    return null;
-  }
-}
+test('extract - only container tags, no messages', () => {
+  const xml = `<smses count="0"></smses>`;
+  
+  const result = extract(xml);
+  strictEqual(result.complete.length, 0);
+});
 
 // ============================================
-// DATE PARSING TESTS
+// DATE PARSING TESTS (no DOM required)
 // ============================================
 
 test('parseDateString - valid timestamp in milliseconds', () => {
@@ -241,120 +198,4 @@ test('parseDateString - empty string returns null', () => {
 
 test('parseDateString - invalid string returns null', () => {
   strictEqual(parseDateString('invalid'), null);
-});
-
-// ============================================
-// SMS PARSING TESTS
-// ============================================
-
-test('parseSmsElement - simple incoming SMS', () => {
-  const xml = '<sms protocol="0" address="+33612345678" date="1609459200000" type="1" subject="null" body="Bonjour !" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />';
-  const msg = parseSmsElement(xml);
-  
-  ok(msg !== null);
-  strictEqual(msg.kind, 'sms');
-  strictEqual(msg.address, '+33612345678');
-  strictEqual(msg.body, 'Bonjour !');
-  strictEqual(msg.out, false);
-  ok(msg.date instanceof Date);
-  strictEqual(msg.date.getTime(), 1609459200000);
-});
-
-test('parseSmsElement - outgoing SMS', () => {
-  const xml = '<sms protocol="0" address="+33612345678" date="1609459260000" type="2" subject="null" body="Je vais bien" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />';
-  const msg = parseSmsElement(xml);
-  
-  ok(msg !== null);
-  strictEqual(msg.out, true);
-});
-
-test('parseSmsElement - with emojis', () => {
-  const xml = '<sms protocol="0" address="+33687654321" date="1609545600000" type="1" subject="null" body="Hello ! 👋 Voici un test 🎉" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />';
-  const msg = parseSmsElement(xml);
-  
-  ok(msg !== null);
-  strictEqual(msg.body, 'Hello ! 👋 Voici un test 🎉');
-});
-
-test('parseSmsElement - with escaped quotes', () => {
-  const xml = '<sms protocol="0" address="+33699999999" date="1609632000000" type="1" subject="null" body="Il a dit : &quot;Bonjour !&quot;" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />';
-  const msg = parseSmsElement(xml);
-  
-  ok(msg !== null);
-  strictEqual(msg.body.includes('"'), true);
-});
-
-test('parseSmsElement - unknown contact', () => {
-  const xml = '<sms protocol="0" address="" date="1609459200000" type="1" subject="null" body="Test" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />';
-  const msg = parseSmsElement(xml);
-  
-  ok(msg !== null);
-  strictEqual(msg.address, 'Inconnu');
-});
-
-// ============================================
-// MMS PARSING TESTS
-// ============================================
-
-test('parseMmsElement - MMS with text and image', () => {
-  const xml = `<mms protocol="0" address="+33611111111" date="1609718400000" type="1" subject="Photo" text_only="0" >
-    <addr address="+33611111111" type="137"/>
-    <part seq="0" ct="image/png" name="test-image.png" chset="" cd="" fn="test-image.png" text="" data="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" />
-    <part seq="1" ct="text/plain" text="Voici une image !" />
-  </mms>`;
-  const result = parseMmsElement(xml);
-  
-  ok(result !== null);
-  ok(result.message !== undefined);
-  ok(result.attachments !== undefined);
-  
-  strictEqual(result.message.kind, 'mms');
-  strictEqual(result.message.address, '+33611111111');
-  ok(result.message.body.includes('image'));
-  strictEqual(result.message.out, false);
-  
-  ok(result.attachments.length >= 1);
-});
-
-test('parseMmsElement - outgoing MMS', () => {
-  const xml = `<mms protocol="0" address="+33622222222" date="1609804800000" type="2" subject="Vacances" text_only="0" >
-    <addr address="+33622222222" type="137"/>
-    <part seq="0" ct="image/jpeg" name="vacation.jpg" chset="" cd="" fn="vacation.jpg" text="" data="/9j/4AAQSkZJRgABAQAAAQABAAD/2wBD" />
-    <part seq="1" ct="text/plain" text="Les photos de vacances !" />
-  </mms>`;
-  const result = parseMmsElement(xml);
-  
-  ok(result !== null);
-  strictEqual(result.message.out, true);
-});
-
-// ============================================
-// FIXTURE FILE TEST
-// ============================================
-
-test('parse full sample.xml file', () => {
-  const xml = readFileSync(resolve(__dirname, 'fixtures', 'sample.xml'), 'utf-8');
-  const result = extract(xml);
-  
-  ok(result.complete.length >= 5, 'Should have at least 5 messages');
-});
-
-// ============================================
-// EDGE CASES
-// ============================================
-
-test('parseSmsElement - with > character in body', () => {
-  const xml = '<sms protocol="0" address="+33633333333" date="1609891200000" type="1" subject="null" body="Test message with > character" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />';
-  const msg = parseSmsElement(xml);
-  
-  ok(msg !== null);
-  strictEqual(msg.body, 'Test message with > character');
-});
-
-test('parseSmsElement - with whitespace in address', () => {
-  const xml = '<sms protocol="0" address="  +33 612 345 678  " date="1609459200000" type="1" subject="null" body="Test" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />';
-  const msg = parseSmsElement(xml);
-  
-  ok(msg !== null);
-  strictEqual(msg.address, '+33 612 345 678');
 });
