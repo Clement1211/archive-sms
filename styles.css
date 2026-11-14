@@ -25,6 +25,66 @@ body{
   z-index:100;
 }
 
+/* Import Progress Bar */
+.import-loader{
+  position:fixed;
+  top:82px;
+  left:0;
+  right:0;
+  background:#fff;
+  border-bottom:1px solid #e7ebf2;
+  z-index:99;
+  display:flex;
+  align-items:center;
+}
+
+.progress-container{
+  width:100%;
+  padding:12px 20px;
+  display:flex;
+  align-items:center;
+  gap:16px;
+}
+
+.progress-bar{
+  flex:1;
+  height:8px;
+  background:#e7ebf2;
+  border-radius:4px;
+  overflow:hidden;
+}
+
+.progress-fill{
+  height:100%;
+  background:#5c7cfa;
+  border-radius:4px;
+  transition:width 0.3s ease;
+}
+
+.progress-info{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:200px;
+  font-size:13px;
+  color:#69758a;
+}
+
+.cancel-btn{
+  background:#fff0f0;
+  color:#b52f42;
+  border:0;
+  border-radius:6px;
+  padding:6px 12px;
+  font-size:12px;
+  cursor:pointer;
+  transition:all 0.2s;
+}
+
+.cancel-btn:hover{
+  background:#ffd6d6;
+}
+
 .eyebrow{
   font-size:10px;
   letter-spacing:1.8px;

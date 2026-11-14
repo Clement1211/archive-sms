@@ -47,6 +47,19 @@
     <input id="fileInput" type="file" accept=".xml,text/xml,application/xml" hidden>
   </header>
   
+  <!-- Import Progress Bar -->
+  <div id="importLoader" class="import-loader" hidden>
+    <div class="progress-container">
+      <div class="progress-bar">
+        <div id="progressBar" class="progress-fill" style="width: 0%"></div>
+      </div>
+      <div class="progress-info">
+        <span id="progressText">0 / 0 octets</span>
+        <button id="cancelImportBtn" class="cancel-btn">Annuler</button>
+      </div>
+    </div>
+  </div>
+  
   <main>
     <section id="welcome" class="welcome">
       <div class="bubble-icon">✉</div>
@@ -58,11 +71,11 @@
       <p class="hint">Les pièces jointes MMS s'affichent automatiquement si présentes dans l'export.</p>
     </section>
     
-    <!-- Loader -->
+    <!-- Loader for other operations -->
     <div id="loader" class="loader" hidden>
       <div class="loader-content">
         <div class="spinner"></div>
-        <p id="loaderText">Importation en cours...</p>
+        <p id="loaderText">Chargement en cours...</p>
       </div>
     </div>
     
@@ -186,12 +199,7 @@
     </div>
   </div>
   
-  <!-- Carbon Ads placeholder -->
-  <div id="carbonAds" class="carbon-ads" hidden>
-    <!-- Carbon Ads will be inserted here -->
-  </div>
-  
   <div id="status" class="status" role="status"></div>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
