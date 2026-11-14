@@ -247,36 +247,51 @@ function extractElementsFromBuffer(buffer) {
   let pos = 0;
 
   while (pos < remaining.length) {
-    const openPos = remaining.indexOf("<", pos);
-    if (openPos === -1) break;
-
-    const closePos = remaining.indexOf(">", openPos);
-    if (closePos === -1) break;
-
-    const tag = remaining.substring(openPos, closePos + 1);
-
-    // Self-closing tag
-    if (tag.endsWith("/>")) {
-      complete.push(tag);
-      remaining = remaining.substring(0, openPos) + remaining.substring(closePos + 1);
+    // Find next <sms or <mms tag
+    const smsPos = remaining.indexOf('<sms', pos);
+    const mmsPos = remaining.indexOf('<mms', pos);
+    
+    // Find the earliest message tag
+    let messagePos = -1;
+    let isMms = false;
+    
+    if (smsPos === -1 && mmsPos === -1) break;
+    if (smsPos === -1) {
+      messagePos = mmsPos;
+      isMms = true;
+    } else if (mmsPos === -1) {
+      messagePos = smsPos;
+    } else {
+      messagePos = Math.min(smsPos, mmsPos);
+      isMms = mmsPos < smsPos;
+    }
+    
+    const tagName = isMms ? 'mms' : 'sms';
+    const closingTag = `</${tagName}>`;
+    
+    // Find the end of the opening tag
+    const openTagEnd = remaining.indexOf('>', messagePos);
+    if (openTagEnd === -1) break;
+    
+    // Check if it's self-closing
+    const isSelfClosing = remaining.substring(openTagEnd - 1, openTagEnd + 1) === '/>';
+    
+    if (isSelfClosing) {
+      // Self-closing tag: <sms ... />
+      const element = remaining.substring(messagePos, openTagEnd + 1);
+      complete.push(element);
+      remaining = remaining.substring(0, messagePos) + remaining.substring(openTagEnd + 1);
       pos = 0;
       continue;
     }
-
-    const tagNameMatch = tag.match(/<(\w+)/);
-    if (!tagNameMatch) {
-      pos = closePos + 1;
-      continue;
-    }
-
-    const tagName = tagNameMatch[1];
-    const closingTag = `</${tagName}>`;
-    const closeTagPos = remaining.indexOf(closingTag, closePos + 1);
+    
+    // Non self-closing: find closing tag
+    const closeTagPos = remaining.indexOf(closingTag, openTagEnd + 1);
     if (closeTagPos === -1) break;
-
-    const element = remaining.substring(openPos, closeTagPos + closingTag.length);
+    
+    const element = remaining.substring(messagePos, closeTagPos + closingTag.length);
     complete.push(element);
-    remaining = remaining.substring(0, openPos) + remaining.substring(closeTagPos + closingTag.length);
+    remaining = remaining.substring(0, messagePos) + remaining.substring(closeTagPos + closingTag.length);
     pos = 0;
   }
 
@@ -308,11 +323,11 @@ async function* parseXmlStreaming(file, signal, onProgress) {
       for (const element of complete) {
         if (signal?.aborted) return;
 
-        const tagName = element.match(/<(\w+)/)?.[1]?.toLowerCase();
-        if (tagName === "sms") {
+        // element is guaranteed to be <sms> or <mms>
+        if (element.startsWith('<sms')) {
           const msg = parseSmsElement(element);
           if (msg) yield msg;
-        } else if (tagName === "mms") {
+        } else if (element.startsWith('<mms')) {
           const result = parseMmsElement(element);
           if (result) yield result;
         }
@@ -324,11 +339,10 @@ async function* parseXmlStreaming(file, signal, onProgress) {
       const { complete } = extractElementsFromBuffer(buffer);
       for (const element of complete) {
         if (signal?.aborted) return;
-        const tagName = element.match(/<(\w+)/)?.[1]?.toLowerCase();
-        if (tagName === "sms") {
+        if (element.startsWith('<sms')) {
           const msg = parseSmsElement(element);
           if (msg) yield msg;
-        } else if (tagName === "mms") {
+        } else if (element.startsWith('<mms')) {
           const result = parseMmsElement(element);
           if (result) yield result;
         }
