@@ -10,18 +10,27 @@
 </head>
 <body>
   <header class="topbar">
-    <div><div class="eyebrow">ARCHIVES LOCALES</div><h1>Messages</h1></div>
-    <button id="importBtn" class="primary">＋ Importer XML</button>
+    <div>
+      <div class="eyebrow">ARCHIVES LOCALES</div>
+      <h1>Messages</h1>
+    </div>
+    <div class="header-actions">
+      <button id="installBtn" class="secondary" hidden>Installer l'app</button>
+      <button id="helpBtn" class="secondary">❓ Aide</button>
+      <button id="importBtn" class="primary">＋ Importer XML</button>
+    </div>
     <input id="fileInput" type="file" accept=".xml,text/xml,application/xml" hidden>
   </header>
+  
   <main>
     <section id="welcome" class="welcome">
       <div class="bubble-icon">✉</div>
       <h2>Retrouve tes anciennes conversations</h2>
-      <p>Importe un export XML de SMS Backup &amp; Restore. Les données sont conservées dans le stockage de ce navigateur, sur cet appareil.</p>
+      <p>Importe un export XML de <strong>SMS Backup &amp; Restore</strong>. Les données sont conservées dans le stockage de ce navigateur, sur cet appareil.</p>
       <button id="welcomeImport" class="primary">Choisir une sauvegarde XML</button>
-      <p class="hint">Les pièces jointes MMS sont affichées si elles sont présentes dans l’export.</p>
+      <p class="hint">Les pièces jointes MMS sont affichées si elles sont présentes dans l'export.</p>
     </section>
+    
     <section id="workspace" hidden>
       <aside class="sidebar">
         <div class="search-wrap"><input id="search" type="search" placeholder="Rechercher un contact ou un message…"></div>
@@ -41,6 +50,52 @@
       </section>
     </section>
   </main>
+  
+  <!-- Modal Aide -->
+  <div id="helpModal" class="modal" hidden>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Comment exporter vos SMS depuis Android ?</h2>
+        <button id="closeHelp" class="close-btn">×</button>
+      </div>
+      <div class="modal-body">
+        <h3>📱 Avec SMS Backup & Restore</h3>
+        <ol>
+          <li><strong>Installez l'application</strong> : <a href="https://play.google.com/store/apps/details?id=com.riteshsahu.SMSBackupRestore" target="_blank">SMS Backup & Restore</a> depuis le Play Store</li>
+          <li><strong>Ouvrez l'application</strong> et autorisez les permissions nécessaires</li>
+          <li><strong>Créez une sauvegarde</strong> :
+            <ul>
+              <li>Cliquez sur "Sauvegarder" ou "Backup"</li>
+              <li>Choisissez le format <strong>XML</strong> (pas JSON)</li>
+              <li>Sélectionnez les conversations à exporter (ou "Tout")</li>
+              <li>Lancez la sauvegarde</li>
+            </ul>
+          </li>
+          <li><strong>Trouvez votre fichier</strong> :
+            <p>Le fichier XML est généralement sauvegardé dans : <code>/SMS Backup Restore/</code> sur votre stockage interne ou SD card</p>
+          </li>
+          <li><strong>Transférez le fichier</strong> :
+            <ul>
+              <li>Par email</li>
+              <li>Via Google Drive / Dropbox</li>
+              <li>Par câble USB</li>
+              <li>Par Bluetooth</li>
+            </ul>
+          </li>
+          <li><strong>Importez ici</strong> : Cliquez sur "Importer XML" et sélectionnez votre fichier</li>
+        </ol>
+        
+        <div class="tutorial-tip">
+          <strong>💡 Astuce :</strong> Pour une utilisation régulière, installez cette application sur votre écran d'accueil (bouton "Installer l'app" ci-dessus).
+        </div>
+        
+        <div class="tutorial-warning">
+          <strong>⚠️ Important :</strong> vos SMS restent <strong>100% locaux</strong>. Aucune donnée n'est envoyée vers un serveur.
+        </div>
+      </div>
+    </div>
+  </div>
+  
   <div id="status" class="status" role="status"></div>
   <script src="app.js"></script>
 </body>

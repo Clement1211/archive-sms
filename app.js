@@ -77,5 +77,22 @@ $("search").oninput=renderList;
 $("backBtn").onclick=()=>{$("workspace").querySelector(".conversation").classList.remove("mobile-open")};
 $("exportBtn").onclick=async()=>{const data=JSON.stringify({messages:allMessages.map(m=>({...m,attachments:[]})),filename:await read("filename")},null,2);const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type:"application/json"}));a.download="archives-sms.json";a.click();URL.revokeObjectURL(a.href);toast("Export JSON préparé")};
 $("clearBtn").onclick=async()=>{if(!confirm("Effacer toutes les conversations stockées sur cet appareil ? Cette action est irréversible."))return;await save("messages",[]);allMessages=[];chats=[];selected=null;render();toast("Archive effacée")};
+
+// Modal help
+function openHelpModal(){$("helpModal").hidden=false;}
+function closeHelpModal(){$("helpModal").hidden=true;}
+$("helpBtn").onclick=openHelpModal;
+$("closeHelp").onclick=closeHelpModal;
+$("helpModal").onclick=e=>{if(e.target===$("helpModal"))closeHelpModal()};
+
+// PWA Install
+let deferredPrompt;
+function showInstallBtn(){$("installBtn").hidden=false;}
+function hideInstallBtn(){$("installBtn").hidden=true;}
+$("installBtn").onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();const{outcome}=await deferredPrompt.userChoice;if(outcome==="accepted"){toast("Installation en cours...");hideInstallBtn();}deferredPrompt=null;}};
+
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredPrompt=e;showInstallBtn();});
+window.addEventListener("appinstalled",()=>{toast("App installée !");hideInstallBtn();deferredPrompt=null;});
+
 (async()=>{try{db=await openDB();allMessages=await read("messages")||[];chats=groupMessages(allMessages);render()}catch(e){toast("Stockage local indisponible dans ce navigateur")}})();
 if("serviceWorker" in navigator && location.protocol.startsWith("http"))navigator.serviceWorker.register("./sw.js").catch(()=>{});
