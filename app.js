@@ -1,24 +1,38 @@
 /**
  * Archives SMS - Web App for reading SMS Backup & Restore XML files
  * 
- * Original version working with 230MB files on iPhone 17
- * Enhanced with streaming parser and progress bar
+ * Enhanced version with streaming XML parser for large files (200MB+)
+ * Compatible with iPhone 17 and Safari iOS
  * 
  * @author Clement1211
  * @license MIT
  */
 
-// Constants
-const DB_NAME = "archives-sms-db", STORE = "archive";
-let db, chats = [], selected = null, allMessages = [];
+// ============================================
+// CONSTANTS
+// ============================================
+
+const DB_NAME = "archives-sms-db";
+const STORE = "archive";
+const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB chunks
+const BATCH_SIZE = 500; // Messages per batch
+
+// ============================================
+// STATE
+// ============================================
+
+let db;
+let allMessages = [];
+let chats = [];
+let selected = null;
 let importController = null;
 
-// DOM Helpers
+// ============================================
+// DOM HELPERS
+// ============================================
+
 const $ = id => document.getElementById(id);
 
-/**
- * Show a toast notification
- */
 function toast(message, duration = 2600) {
   const el = $("status");
   el.textContent = message;
@@ -26,13 +40,9 @@ function toast(message, duration = 2600) {
   setTimeout(() => el.classList.remove("show"), duration);
 }
 
-/**
- * Update progress bar
- */
 function updateProgress(bytesRead, totalBytes) {
   const progressBar = $("progressBar");
   const progressText = $("progressText");
-  
   if (progressBar && progressText) {
     const percent = totalBytes > 0 ? Math.round((bytesRead / totalBytes) * 100) : 0;
     progressBar.style.width = `${percent}%`;
@@ -40,9 +50,6 @@ function updateProgress(bytesRead, totalBytes) {
   }
 }
 
-/**
- * Format bytes to human readable string
- */
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -50,9 +57,6 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-/**
- * Show/hide loader
- */
 function showLoader() {
   const loader = $("importLoader");
   if (loader) loader.hidden = false;
@@ -64,10 +68,10 @@ function hideLoader() {
   updateProgress(0, 0);
 }
 
-/**
- * Open IndexedDB database
- * Keep v1 for compatibility, use store "archive"
- */
+// ============================================
+// INDEXEDDB MANAGEMENT
+// ============================================
+
 function openDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
@@ -82,9 +86,6 @@ function openDB() {
   });
 }
 
-/**
- * Save data to IndexedDB
- */
 function save(key, value) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");
@@ -94,9 +95,6 @@ function save(key, value) {
   });
 }
 
-/**
- * Read data from IndexedDB
- */
 function read(key) {
   return new Promise((resolve, reject) => {
     const r = db.transaction(STORE).objectStore(STORE).get(key);
@@ -105,18 +103,52 @@ function read(key) {
   });
 }
 
-/**
- * Clean phone number formatting
- */
-function cleanNumber(v) {
-  return (v || "Inconnu").trim().replace(/\s+/g, " ");
+function saveMessageBatch(messages) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    for (const msg of messages) {
+      store.put(msg, `msg-${msg.id}`);
+    }
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
 }
+
+async function clearAllData() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).clear();
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadAllMessages() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readonly");
+    const store = tx.objectStore(STORE);
+    const request = store.getAll();
+    request.onsuccess = () => {
+      const messages = request.result.filter(item => 
+        typeof item === 'object' && item.address !== undefined
+      );
+      resolve(messages.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0)));
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// ============================================
+// XML PARSING FUNCTIONS
+// ============================================
 
 /**
  * Parse date string (timestamp in milliseconds or seconds)
  */
-function dateOf(v) {
-  let n = Number(v);
+function parseDateString(dateString) {
+  if (!dateString) return null;
+  let n = Number(dateString);
   if (!Number.isFinite(n)) return null;
   if (n < 1e12) n *= 1000;
   const d = new Date(n);
@@ -124,111 +156,240 @@ function dateOf(v) {
 }
 
 /**
- * Format date for display
+ * Parse a single SMS element
  */
-function fmtDate(d) {
-  return d ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(d) : "";
+function parseSmsElement(elementString) {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(elementString, 'application/xml');
+    const parserError = doc.querySelector('parsererror');
+    if (parserError) return null;
+    
+    const element = doc.documentElement;
+    if (element.tagName.toLowerCase() !== 'sms') return null;
+    
+    const type = element.getAttribute('type');
+    const address = (element.getAttribute('address') || 'Inconnu').trim().replace(/\s+/g, ' ');
+    const date = parseDateString(element.getAttribute('date'));
+    const body = element.getAttribute('body') || '';
+    const isOutgoing = type === '2';
+    
+    return {
+      id: Date.now() + Math.random(),
+      address,
+      body,
+      date,
+      kind: 'sms',
+      out: isOutgoing,
+      attachments: []
+    };
+  } catch (e) {
+    console.warn('Error parsing SMS:', e);
+    return null;
+  }
 }
 
 /**
- * Format time for display
+ * Parse an MMS element with parts
  */
-function fmtTime(d) {
-  return d ? new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(d) : "";
-}
-
-/**
- * Parse XML element (from original version, adapted)
- */
-function parseXml(xml) {
-  const doc = new DOMParser().parseFromString(xml, "application/xml");
-  if (doc.querySelector("parsererror")) throw Error("Le fichier XML semble invalide.");
-  
-  const nodes = [...doc.getElementsByTagName("sms"), ...doc.getElementsByTagName("mms")];
-  if (!nodes.length) throw Error("Aucun SMS ou MMS trouvé dans ce fichier.");
-  
-  return nodes.map((n, i) => {
-    const type = n.getAttribute("type");
-    const address = cleanNumber(n.getAttribute("address"));
-    const date = dateOf(n.getAttribute("date"));
-    const isMms = n.tagName.toLowerCase() === "mms";
-    let body = n.getAttribute("body") || "";
+function parseMmsElement(elementString) {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(elementString, 'application/xml');
+    const parserError = doc.querySelector('parsererror');
+    if (parserError) return null;
+    
+    const element = doc.documentElement;
+    if (element.tagName.toLowerCase() !== 'mms') return null;
+    
+    const type = element.getAttribute('type');
+    let address = (element.getAttribute('address') || 'Inconnu').trim().replace(/\s+/g, ' ');
+    const date = parseDateString(element.getAttribute('date'));
+    const isOutgoing = type === '2';
+    
+    let body = '';
     const attachments = [];
     
-    if (isMms) {
-      const parts = [...n.getElementsByTagName("part")];
-      for (const p of parts) {
-        const ct = p.getAttribute("ct") || "";
-        const text = p.getAttribute("text");
-        const data = p.getAttribute("data");
-        
-        if (ct.startsWith("text/") && text) {
-          body += (body ? "\n" : "") + text;
-        } else if (data) {
-          try {
-            const raw = atob(data.replace(/\s/g, ""));
-            const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
-            // Store as data URL for now (will be fixed in Step 2)
-            attachments.push({
-              type: ct || "application/octet-stream",
-              dataUrl: URL.createObjectURL(new Blob([bytes], { type: ct || "application/octet-stream" })),
-              name: p.getAttribute("cl") || "pièce jointe"
-            });
-          } catch (e) {
-            console.warn("Failed to decode attachment", e);
+    // Parse parts
+    const parts = element.getElementsByTagName('part');
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const ct = part.getAttribute('ct') || '';
+      const text = part.getAttribute('text');
+      const data = part.getAttribute('data');
+      const cl = part.getAttribute('cl') || `piece-jointe-${i + 1}`;
+      
+      if (ct.startsWith('text/') && text) {
+        body += (body ? '\n' : '') + text;
+      } else if (data) {
+        try {
+          const raw = atob(data.replace(/\s/g, ''));
+          const bytes = new Uint8Array(raw.length);
+          for (let j = 0; j < raw.length; j++) {
+            bytes[j] = raw.charCodeAt(j);
           }
+          // Store as data URL for now (Step 2 will improve this)
+          const blob = new Blob([bytes], { type: ct || 'application/octet-stream' });
+          const dataUrl = URL.createObjectURL(blob);
+          attachments.push({
+            type: ct || 'application/octet-stream',
+            dataUrl,
+            name: cl
+          });
+        } catch (e) {
+          console.warn('Failed to decode attachment:', e);
         }
       }
     }
     
+    // Get addresses from addr tags
+    const addrs = Array.from(element.getElementsByTagName('addr'))
+      .map(a => a.getAttribute('address'))
+      .filter(Boolean);
+    
+    if (address === 'Inconnu' && addrs.length > 0) {
+      address = addrs[0];
+    }
+    
     return {
-      id: i,
+      id: Date.now() + Math.random(),
       address,
-      body: body || (attachments.length ? "Média" : ""),
+      body: body || (attachments.length ? 'Média' : ''),
       date,
-      kind: isMms ? "mms" : "sms",
-      out: type === "2",
+      kind: 'mms',
+      out: isOutgoing,
       attachments
     };
-  }).sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0));
+  } catch (e) {
+    console.warn('Error parsing MMS:', e);
+    return null;
+  }
 }
 
 /**
- * Streaming XML parser using file.slice() for better memory management
- * Falls back to original parseXml for compatibility
+ * Extract complete XML elements from buffer
  */
-async function parseXmlStreaming(file, onProgress) {
-  const BUFFER_SIZE = 8 * 1024 * 1024; // 8MB
-  let buffer = '';
-  let allXml = '';
-  let bytesRead = 0;
+function extractElements(buffer) {
+  const complete = [];
+  let remaining = buffer;
+  let pos = 0;
   
-  // For now, use the original method for compatibility
-  // But read in chunks to show progress
-  const totalBytes = file.size;
-  
-  while (bytesRead < totalBytes) {
-    const chunk = file.slice(bytesRead, bytesRead + BUFFER_SIZE);
-    const chunkText = await chunk.text();
-    buffer += chunkText;
-    bytesRead += chunk.size;
+  while (pos < remaining.length) {
+    const openPos = remaining.indexOf('<', pos);
+    if (openPos === -1) break;
     
-    if (onProgress) {
-      onProgress(bytesRead, totalBytes);
+    const closePos = remaining.indexOf('>', openPos);
+    if (closePos === -1) break;
+    
+    const tagStart = openPos;
+    const tagEnd = closePos;
+    const tag = remaining.substring(openPos, closePos + 1);
+    
+    // Self-closing tag
+    if (tag.endsWith('/>')) {
+      complete.push(tag);
+      pos = tagEnd + 1;
+      remaining = remaining.substring(0, tagStart) + remaining.substring(tagEnd + 1);
+      pos = 0;
+      continue;
     }
     
-    // Check for cancellation
-    if (importController && importController.signal.aborted) {
-      throw new Error("Import annulé");
+    // Opening tag - find closing tag
+    const tagNameMatch = tag.match(/<(\w+)/);
+    if (!tagNameMatch) {
+      pos = tagEnd + 1;
+      continue;
     }
+    
+    const tagName = tagNameMatch[1];
+    const closingTag = `</${tagName}>`;
+    const closeTagPos = remaining.indexOf(closingTag, tagEnd + 1);
+    
+    if (closeTagPos === -1) break;
+    
+    const element = remaining.substring(tagStart, closeTagPos + closingTag.length);
+    complete.push(element);
+    pos = 0;
+    remaining = remaining.substring(0, tagStart) + remaining.substring(closeTagPos + closingTag.length);
   }
   
-  return buffer;
+  return { complete, remaining };
 }
 
 /**
- * Group messages by contact (from original version)
+ * Streaming XML parser
  */
+async function* parseXmlStreaming(file, signal = null, onProgress = null) {
+  let buffer = '';
+  let bytesRead = 0;
+  let totalBytes = file.size;
+  
+  if (signal?.aborted) return;
+  
+  try {
+    while (bytesRead < totalBytes) {
+      if (signal?.aborted) return;
+      
+      const endPos = Math.min(bytesRead + CHUNK_SIZE, totalBytes);
+      const chunk = file.slice(bytesRead, endPos);
+      const chunkText = await chunk.text();
+      buffer += chunkText;
+      bytesRead += chunk.size;
+      
+      if (onProgress) {
+        onProgress(bytesRead, totalBytes);
+      }
+      
+      const { complete, remaining } = extractElements(buffer);
+      buffer = remaining;
+      
+      for (const element of complete) {
+        if (signal?.aborted) return;
+        
+        const tagName = element.match(/<(\w+)/)?.[1]?.toLowerCase();
+        
+        if (tagName === 'sms') {
+          const msg = parseSmsElement(element);
+          if (msg) yield msg;
+        } else if (tagName === 'mms') {
+          const msg = parseMmsElement(element);
+          if (msg) yield msg;
+        }
+      }
+    }
+    
+    // Process remaining buffer
+    if (buffer) {
+      const { complete } = extractElements(buffer);
+      for (const element of complete) {
+        if (signal?.aborted) return;
+        const tagName = element.match(/<(\w+)/)?.[1]?.toLowerCase();
+        if (tagName === 'sms') {
+          const msg = parseSmsElement(element);
+          if (msg) yield msg;
+        } else if (tagName === 'mms') {
+          const msg = parseMmsElement(element);
+          if (msg) yield msg;
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Streaming parse error:', e);
+    throw e;
+  }
+}
+
+function createAbortController() {
+  return {
+    signal: { aborted: false },
+    abort: () => { this.signal.aborted = true; }
+  };
+}
+
+// ============================================
+// CONVERSATION MANAGEMENT
+// ============================================
+
 function groupMessages(msgs) {
   const map = new Map();
   for (const m of msgs) {
@@ -245,52 +406,68 @@ function groupMessages(msgs) {
     .sort((a, b) => (b.last.date?.getTime() || 0) - (a.last.date?.getTime() || 0));
 }
 
-/**
- * Import XML file
- * Uses streaming for large files but falls back to original method
- */
+// ============================================
+// IMPORT FUNCTION
+// ============================================
+
 async function importFile(file) {
   if (!file) return;
   
-  // Create abort controller
-  importController = {
-    signal: { aborted: false },
-    abort: () => { importController.signal.aborted = true; }
-  };
-  
+  importController = createAbortController();
   showLoader();
   updateProgress(0, file.size);
   
   try {
-    // Read file in chunks to show progress
-    const xml = await parseXmlStreaming(file, (bytesRead, totalBytes) => {
-      updateProgress(bytesRead, totalBytes);
+    let allMessages = [];
+    let currentBatch = [];
+    let messageCount = 0;
+    
+    selected = null;
+    await clearAllData();
+    
+    const messagesStream = parseXmlStreaming(
+      file,
+      importController.signal,
+      (bytesRead, totalBytes) => {
+        updateProgress(bytesRead, totalBytes);
+      }
+    );
+    
+    for await (const msg of messagesStream) {
       if (importController.signal.aborted) {
         throw new Error("Import annulé");
       }
-    });
+      
+      currentBatch.push(msg);
+      allMessages.push(msg);
+      messageCount++;
+      
+      if (currentBatch.length >= BATCH_SIZE) {
+        await saveMessageBatch(currentBatch);
+        currentBatch = [];
+      }
+    }
     
-    // Parse XML (original method)
-    const msgs = parseXml(xml);
+    if (currentBatch.length > 0) {
+      await saveMessageBatch(currentBatch);
+    }
     
-    // Save to IndexedDB (original method)
-    await save("messages", msgs);
-    await save("filename", file.name);
-    
-    allMessages = msgs;
-    chats = groupMessages(msgs);
-    selected = null;
+    chats = groupMessages(allMessages);
     
     // Request persistent storage
     if ('storage' in navigator && 'persist' in navigator.storage) {
-      await navigator.storage.persist();
-      const estimation = await navigator.storage.estimate();
-      console.log("Storage quota:", estimation);
+      try {
+        await navigator.storage.persist();
+        const estimation = await navigator.storage.estimate();
+        console.log("Storage quota:", estimation);
+      } catch (e) {
+        console.warn("Storage persist failed:", e);
+      }
     }
     
     hideLoader();
     render();
-    toast(`${msgs.length} messages importés`);
+    toast(`${messageCount} messages importés`);
     
   } catch (error) {
     hideLoader();
@@ -298,26 +475,24 @@ async function importFile(file) {
       toast("Import annulé");
     } else {
       console.error("Import error:", error);
-      toast(`Erreur pendant l'import: ${error.message}`);
+      toast(`Erreur: ${error.message}`);
     }
   } finally {
     importController = null;
   }
 }
 
-/**
- * Render the UI (from original version)
- */
+// ============================================
+// RENDERING FUNCTIONS
+// ============================================
+
 function render() {
-  $("welcome").hidden = allMessages.length > 0;
-  $("workspace").hidden = !allMessages.length;
+  $("welcome").hidden = allMessages.length > 0 || chats.length > 0;
+  $("workspace").hidden = !allMessages.length && !chats.length;
   $("chatCount").textContent = chats.length.toString();
   renderList();
 }
 
-/**
- * Render chat list (from original version)
- */
 function renderList() {
   const q = $("search").value.toLocaleLowerCase("fr");
   const list = $("chatList");
@@ -325,7 +500,7 @@ function renderList() {
   
   const filtered = chats.filter(c =>
     c.address.toLocaleLowerCase("fr").includes(q) ||
-    c.messages.some(m => m.body.toLocaleLowerCase("fr").includes(q))
+    c.last?.body?.toLocaleLowerCase("fr").includes(q)
   );
   
   for (const c of filtered) {
@@ -347,11 +522,11 @@ function renderList() {
     
     const dt = document.createElement("span");
     dt.className = "chat-date";
-    dt.textContent = fmtDate(c.last.date);
+    dt.textContent = fmtDate(c.last?.date);
     
     const preview = document.createElement("div");
     preview.className = "chat-preview";
-    preview.textContent = (c.last.out ? "Vous : " : "") + c.last.body;
+    preview.textContent = (c.last?.out ? "Vous : " : "") + (c.last?.body || "");
     
     line.append(name, dt);
     meta.append(line, preview);
@@ -361,9 +536,14 @@ function renderList() {
   }
 }
 
-/**
- * Open a chat conversation (from original version)
- */
+function fmtDate(d) {
+  return d ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(d) : "";
+}
+
+function fmtTime(d) {
+  return d ? new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(d) : "";
+}
+
 function openChat(address) {
   selected = address;
   const c = chats.find(x => x.address === address);
@@ -392,13 +572,13 @@ function openChat(address) {
     bubble.textContent = m.body || "";
     
     for (const a of m.attachments || []) {
-      if (a.type.startsWith("image/")) {
+      if (a.type.startsWith("image/") && a.dataUrl) {
         const img = document.createElement("img");
         img.className = "attachment";
         img.src = a.dataUrl;
         img.alt = "Image MMS";
         bubble.append(img);
-      } else {
+      } else if (a.dataUrl) {
         const link = document.createElement("a");
         link.className = "attachment-link";
         link.href = a.dataUrl;
@@ -423,7 +603,10 @@ function openChat(address) {
   }
 }
 
-// Event Listeners
+// ============================================
+// EVENT LISTENERS
+// ============================================
+
 $("importBtn").onclick = $("welcomeImport").onclick = () => $("fileInput").click();
 $("fileInput").onchange = e => importFile(e.target.files[0]);
 $("search").oninput = renderList;
@@ -432,13 +615,14 @@ $("backBtn").onclick = () => {
 };
 
 $("exportBtn").onclick = async () => {
+  const messages = await loadAllMessages();
   const data = JSON.stringify({
-    messages: allMessages.map(m => ({ ...m, attachments: [] })),
-    filename: await read("filename")
+    messages: messages.map(m => ({ ...m, attachments: [] })),
+    exportedAt: new Date().toISOString()
   }, null, 2);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
-  a.download = "archives-sms.json";
+  a.download = "archives-sms-export.json";
   a.click();
   URL.revokeObjectURL(a.href);
   toast("Export JSON préparé");
@@ -446,7 +630,7 @@ $("exportBtn").onclick = async () => {
 
 $("clearBtn").onclick = async () => {
   if (!confirm("Effacer toutes les conversations stockées sur cet appareil ? Cette action est irréversible.")) return;
-  await save("messages", []);
+  await clearAllData();
   allMessages = [];
   chats = [];
   selected = null;
@@ -454,21 +638,19 @@ $("clearBtn").onclick = async () => {
   toast("Archive effacée");
 };
 
-// Modal help
+// Modal handlers
 function openHelpModal() { $("helpModal").hidden = false; }
 function closeHelpModal() { $("helpModal").hidden = true; }
 $("helpBtn").onclick = openHelpModal;
 $("closeHelp").onclick = closeHelpModal;
 $("helpModal").onclick = e => { if (e.target === $("helpModal")) closeHelpModal(); };
 
-// Privacy Modal
 function openPrivacyModal() { $("privacyModal").hidden = false; }
 function closePrivacyModal() { $("privacyModal").hidden = true; }
 $("privacyLink").onclick = e => { e.preventDefault(); openPrivacyModal(); };
 $("closePrivacy").onclick = closePrivacyModal;
 $("privacyModal").onclick = e => { if (e.target === $("privacyModal")) closePrivacyModal(); };
 
-// Cancel import
 $("cancelImportBtn").onclick = () => {
   if (importController) {
     importController.abort();
@@ -509,15 +691,17 @@ window.addEventListener("appinstalled", () => {
   deferredPrompt = null;
 });
 
-// Initialize the app
+// ============================================
+// INITIALIZATION
+// ============================================
+
 (async () => {
   try {
     db = await openDB();
-    allMessages = await read("messages") || [];
+    allMessages = await loadAllMessages();
     chats = groupMessages(allMessages);
     render();
     
-    // Check for updates
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});
     }
