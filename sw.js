@@ -23,6 +23,38 @@ const STATIC_FILES = [
 
 const CACHE_NAME = `archives-sms-${CACHE_VERSION}`;
 
+// Pure function to determine if a URL is critical
+function isCriticalFile(url, scope) {
+  try {
+    const resolvedUrl = new URL(url, scope);
+    const urlPath = resolvedUrl.origin + resolvedUrl.pathname;
+    const scopeUrl = new URL(scope);
+    const scopePath = scopeUrl.origin + scopeUrl.pathname;
+    
+    // Normalize scope path (remove trailing slash)
+    const normalizedScope = scopePath.endsWith('/') ? scopePath.slice(0, -1) : scopePath;
+    
+    // Normalize url path (remove trailing slash)
+    const normalizedUrlPath = urlPath.endsWith('/') ? urlPath.slice(0, -1) : urlPath;
+    
+    // Check if the URL matches any critical file
+    for (const file of CRITICAL_FILES) {
+      const resolvedFile = new URL(file, scope);
+      const filePath = resolvedFile.origin + resolvedFile.pathname;
+      const normalizedFilePath = filePath.endsWith('/') ? filePath.slice(0, -1) : filePath;
+      
+      if (normalizedUrlPath === normalizedFilePath) {
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (e) {
+    console.warn('Error checking critical file:', e);
+    return false;
+  }
+}
+
 // Install: cache all files, skip waiting
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -58,14 +90,19 @@ self.addEventListener('activate', (event) => {
 // Fetch: network-first for critical files, cache-first for static
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  const isCritical = CRITICAL_FILES.some(file => 
-    url.pathname.endsWith(file) || url.pathname === file
-  );
   
-  if (isCritical) {
+  if (isCriticalFile(event.request.url, self.registration.scope)) {
     // Network-first with cache fallback for critical files
     event.respondWith(
-      fetch(event.request).catch(() => {
+      fetch(event.request).then((res) => {
+        // Update cache with fresh response
+        if (res.ok) {
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, res.clone());
+          });
+        }
+        return res;
+      }).catch(() => {
         return caches.match(event.request).then((response) => {
           return response || caches.match('./index.html');
         });
@@ -82,3 +119,8 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+// Export for testing
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { isCriticalFile };
+}
