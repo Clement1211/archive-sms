@@ -4,15 +4,9 @@
  */
 
 import { test } from 'node:test';
-import { strictEqual, ok } from 'node:assert';
+import { strictEqual } from 'node:assert';
 
-// Import the isCriticalFile function from sw.js
-// Since sw.js uses self.registration.scope, we need to mock it for testing
-
-// Read and evaluate the isCriticalFile function from sw.js
-const swCode = new TextDecoder().decode(await Deno.readFile(new URL('../sw.js', import.meta.url)));
-
-// Extract the CRITICAL_FILES array and isCriticalFile function
+// CRITICAL_FILES array from sw.js - must match what's in the service worker
 const CRITICAL_FILES = [
   './',
   './index.html',
@@ -22,16 +16,11 @@ const CRITICAL_FILES = [
   './manifest.webmanifest'
 ];
 
-// Recreate isCriticalFile for testing
+// Recreate isCriticalFile for testing - must match the logic in sw.js
 function isCriticalFile(url, scope) {
   try {
     const resolvedUrl = new URL(url, scope);
     const urlPath = resolvedUrl.origin + resolvedUrl.pathname;
-    const scopeUrl = new URL(scope);
-    const scopePath = scopeUrl.origin + scopeUrl.pathname;
-    
-    // Normalize scope path (remove trailing slash)
-    const normalizedScope = scopePath.endsWith('/') ? scopePath.slice(0, -1) : scopePath;
     
     // Normalize url path (remove trailing slash)
     const normalizedUrlPath = urlPath.endsWith('/') ? urlPath.slice(0, -1) : urlPath;
@@ -49,7 +38,6 @@ function isCriticalFile(url, scope) {
     
     return false;
   } catch (e) {
-    console.warn('Error checking critical file:', e);
     return false;
   }
 }
@@ -81,6 +69,16 @@ test('isCriticalFile - /parser.js is critical', () => {
   strictEqual(result, true);
 });
 
+test('isCriticalFile - /styles.css is critical', () => {
+  const result = isCriticalFile('https://clement1211.github.io/archive-sms/styles.css', SCOPE);
+  strictEqual(result, true);
+});
+
+test('isCriticalFile - /manifest.webmanifest is critical', () => {
+  const result = isCriticalFile('https://clement1211.github.io/archive-sms/manifest.webmanifest', SCOPE);
+  strictEqual(result, true);
+});
+
 // ============================================
 // STATIC FILES TESTS (should NOT be critical)
 // ============================================
@@ -92,5 +90,10 @@ test('isCriticalFile - /assets/icon-192.png is NOT critical', () => {
 
 test('isCriticalFile - /favicon.svg is NOT critical', () => {
   const result = isCriticalFile('https://clement1211.github.io/archive-sms/favicon.svg', SCOPE);
+  strictEqual(result, false);
+});
+
+test('isCriticalFile - /assets/icon-512.png is NOT critical', () => {
+  const result = isCriticalFile('https://clement1211.github.io/archive-sms/assets/icon-512.png', SCOPE);
   strictEqual(result, false);
 });
