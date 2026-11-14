@@ -881,20 +881,18 @@ function setupEventListeners() {
 
     // Service Worker registration with update detection
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      let newWorker;
-      
-      navigator.serviceWorker.register("./sw.js").catch(() => {});
-      
-      // Detect when a new service worker is installed and waiting
-      navigator.serviceWorker.addEventListener('updatefound', () => {
-        newWorker = navigator.serviceWorker.installing;
-        newWorker.addEventListener('statechange', () => {
-          // Show banner when new SW is installed and there's a current controller
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            showUpdateBanner();
-          }
+      navigator.serviceWorker.register("./sw.js").then((reg) => {
+        // Listen for updates on the registration, not navigator.serviceWorker
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          newWorker.addEventListener('statechange', () => {
+            // Show banner when new SW is installed and there's a current controller
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateBanner();
+            }
+          });
         });
-      });
+      }).catch(() => {});
     }
 
     // Request persistent storage on load
