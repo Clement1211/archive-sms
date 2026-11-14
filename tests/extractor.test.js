@@ -209,8 +209,6 @@ test('extract - only container tags, no messages', () => {
 // This test will be skipped if tests/private/*.xml doesn't exist
 // ============================================
 
-import { readdirSync } from 'node:fs';
-
 const privateDir = resolve(__dirname, 'private');
 try {
   const privateFiles = readdirSync(privateDir).filter(f => f.endsWith('.xml'));
