@@ -241,64 +241,57 @@ function parseMmsElement(xmlString) {
   }
 }
 
-function extractElementsFromBuffer(buffer) {
-  const complete = [];
-  let remaining = buffer;
-  let pos = 0;
+// ============================================
+// XML EXTRACTOR - Reference implementation (validated on 149 Mo file)
+// ============================================
 
-  while (pos < remaining.length) {
-    // Find next <sms or <mms tag
-    const smsPos = remaining.indexOf('<sms', pos);
-    const mmsPos = remaining.indexOf('<mms', pos);
-    
-    // Find the earliest message tag
-    let messagePos = -1;
-    let isMms = false;
-    
-    if (smsPos === -1 && mmsPos === -1) break;
-    if (smsPos === -1) {
-      messagePos = mmsPos;
-      isMms = true;
-    } else if (mmsPos === -1) {
-      messagePos = smsPos;
-    } else {
-      messagePos = Math.min(smsPos, mmsPos);
-      isMms = mmsPos < smsPos;
-    }
-    
-    const tagName = isMms ? 'mms' : 'sms';
-    const closingTag = `</${tagName}>`;
-    
-    // Find the end of the opening tag
-    const openTagEnd = remaining.indexOf('>', messagePos);
-    if (openTagEnd === -1) break;
-    
-    // Check if it's self-closing
-    const isSelfClosing = remaining.substring(openTagEnd - 1, openTagEnd + 1) === '/>';
-    
-    if (isSelfClosing) {
-      // Self-closing tag: <sms ... />
-      const element = remaining.substring(messagePos, openTagEnd + 1);
-      complete.push(element);
-      remaining = remaining.substring(0, messagePos) + remaining.substring(openTagEnd + 1);
-      pos = 0;
-      continue;
-    }
-    
-    // Non self-closing: find closing tag
-    const closeTagPos = remaining.indexOf(closingTag, openTagEnd + 1);
-    if (closeTagPos === -1) break;
-    
-    const element = remaining.substring(messagePos, closeTagPos + closingTag.length);
-    complete.push(element);
-    remaining = remaining.substring(0, messagePos) + remaining.substring(closeTagPos + closingTag.length);
-    pos = 0;
+const START = /<(sms|mms)(?=[\s\/>])/g;
+const ATTR = /\s+[^\s=\/>]+\s*=\s*(?:"[^"]*"|'[^']*')/y;
+
+// Returns null if opening tag is incomplete in buffer
+function openTag(s, i) {
+  let p = i;
+  for (;;) { 
+    ATTR.lastIndex = p; 
+    if (!ATTR.exec(s)) break; 
+    p = ATTR.lastIndex; 
   }
-
-  return { complete, remaining };
+  while (p < s.length && /\s/.test(s[p])) p++;
+  if (s[p] === '>') return { end: p, self: false };
+  if (s[p] === '/' && s[p + 1] === '>') return { end: p + 1, self: true };
+  return null;
 }
 
+// Extract complete <sms> and <mms> elements from buffer
+function extract(s) {
+  const out = []; 
+  let cur = 0;
+  for (;;) {
+    START.lastIndex = cur; 
+    const m = START.exec(s);
+    if (!m) return { complete: out, remaining: s.slice(Math.max(cur, s.length - 16)) };
+    const st = m.index, 
+          ot = openTag(s, st + 1 + m[1].length);
+    if (!ot) return { complete: out, remaining: s.slice(st) };
+    if (ot.self) { 
+      out.push(s.slice(st, ot.end + 1)); 
+      cur = ot.end + 1; 
+      continue; 
+    }
+    const close = '</' + m[1] + '>', 
+          cp = s.indexOf(close, ot.end + 1);
+    if (cp === -1) return { complete: out, remaining: s.slice(st) };
+    out.push(s.slice(st, cp + close.length)); 
+    cur = cp + close.length;
+  }
+}
+
+// ============================================
+// STREAMING XML PARSER
+// ============================================
+
 async function* parseXmlStreaming(file, signal, onProgress) {
+  const decoder = new TextDecoder('utf-8');
   let buffer = "";
   let bytesRead = 0;
   const totalBytes = file.size;
@@ -311,19 +304,18 @@ async function* parseXmlStreaming(file, signal, onProgress) {
 
       const endPos = Math.min(bytesRead + CHUNK_SIZE, totalBytes);
       const chunk = file.slice(bytesRead, endPos);
-      const chunkText = await chunk.text();
+      const chunkText = decoder.decode(await chunk.arrayBuffer(), { stream: true });
       buffer += chunkText;
-      bytesRead += (endPos - bytesRead);
+      bytesRead = endPos;
 
       if (onProgress) onProgress(bytesRead, totalBytes);
 
-      const { complete, remaining } = extractElementsFromBuffer(buffer);
+      const { complete, remaining } = extract(buffer);
       buffer = remaining;
 
       for (const element of complete) {
         if (signal?.aborted) return;
-
-        // element is guaranteed to be <sms> or <mms>
+        
         if (element.startsWith('<sms')) {
           const msg = parseSmsElement(element);
           if (msg) yield msg;
@@ -336,7 +328,7 @@ async function* parseXmlStreaming(file, signal, onProgress) {
 
     // Process remaining buffer
     if (buffer) {
-      const { complete } = extractElementsFromBuffer(buffer);
+      const { complete } = extract(buffer);
       for (const element of complete) {
         if (signal?.aborted) return;
         if (element.startsWith('<sms')) {
