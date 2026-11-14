@@ -1,23 +1,37 @@
 /**
  * Service Worker for Archives SMS PWA
- * Simple caching for offline use
+ * Robust caching for offline use
  */
 
-const CACHE = "archives-sms-v1";
+const CACHE = "archives-sms-v2";
 const FILES = [
   "./",
   "./index.html",
   "./app.js",
   "./styles.css",
   "./manifest.webmanifest",
-  "./favicon.svg"
+  "./favicon.svg",
+  "./assets/icon-192.png",
+  "./assets/icon-512.png",
+  "./assets/icon-maskable-192.png",
+  "./assets/icon-maskable-512.png",
+  "./assets/apple-touch-icon.png"
 ];
 
 // Install service worker
 self.addEventListener("install", e => {
   e.waitUntil(
     caches.open(CACHE)
-      .then(cache => cache.addAll(FILES))
+      .then(cache => {
+        // Add all files, but don't fail if one is missing
+        const promises = FILES.map(file => {
+          return cache.add(file).catch(err => {
+            console.warn(`Failed to cache ${file}:`, err);
+            return Promise.resolve(); // Continue even if one file fails
+          });
+        });
+        return Promise.all(promises);
+      })
       .catch(err => console.warn("Cache install failed:", err))
   );
 });
