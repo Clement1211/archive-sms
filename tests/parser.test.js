@@ -10,6 +10,58 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
+// Simple DOMParser mock for Node.js
+const DOMParser = class {
+  parseFromString(xmlString, contentType) {
+    // Simple mock that creates a basic document structure
+    const match = xmlString.match(/<(\w+)([^>]*)\/?>/);
+    if (!match) {
+      return {
+        documentElement: null,
+        querySelector: () => null,
+        getElementsByTagName: () => []
+      };
+    }
+    const tagName = match[1];
+    const attrsString = match[2];
+    
+    // Parse attributes
+    const attrs = {};
+    const attrRegex = /(\w+)="([^"]*)"/g;
+    let attrMatch;
+    while ((attrMatch = attrRegex.exec(attrsString)) !== null) {
+      attrs[attrMatch[1]] = attrMatch[2];
+    }
+    
+    // Create a mock element
+    const element = {
+      tagName,
+      getAttribute: (name) => attrs[name] || null,
+      querySelector: (selector) => {
+        if (selector === 'parsererror') return null;
+        return null;
+      },
+      getElementsByTagName: (tag) => {
+        const results = [];
+        const regex = new RegExp(`<${tag}([^>]*)>([\s\S]*?)<\/${tag}>`, 'g');
+        let match;
+        const content = xmlString;
+        while ((match = regex.exec(content)) !== null) {
+          results.push({
+            getAttribute: (name) => {
+              const itemMatch = match[1].match(new RegExp(`${name}="([^"]*)"`));
+              return itemMatch ? itemMatch[1] : null;
+            }
+          });
+        }
+        return results;
+      }
+    };
+    
+    return { documentElement: element, querySelector: () => null };
+  }
+};
+
 // Inline parser functions for testing
 const START = /<(sms|mms)(?=[\s\/>])/g;
 const ATTR_REGEX = /\s+[^\s=\/>]+\s*=\s*(?:"[^"]*"|'[^']*')/y;
