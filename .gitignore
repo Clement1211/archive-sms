@@ -29,12 +29,11 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-# Testing
-coverage/
-
 # Data files - NEVER commit user data
 *.xml
-*.json
+
+# Testing
+coverage/
 
 # Misc
 *.bak
