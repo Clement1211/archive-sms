@@ -3,10 +3,10 @@
  * Can be used in browser or Node.js
  * 
  * Usage in Node:
- *   const { parseXmlStreaming, parseSmsElement, parseMmsElement } = require('./parser.js');
+ *   const { extract, parseSmsElement, parseMmsElement } = require('./parser.js');
  * 
  * Usage in Browser:
- *   import * as parser from './parser.js';
+ *   import { extract, parseSmsElement, parseMmsElement } from './parser.js';
  */
 
 // ============================================
@@ -14,6 +14,60 @@
 // ============================================
 
 const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
+
+// ============================================
+// XML EXTRACTOR - Reference implementation
+// ============================================
+
+const START = /<(sms|mms)(?=[\s\/>])/g;
+const ATTR = /\s+[^\s=\/>]+\s*=\s*(?:"[^"]*"|'[^']*')/y;
+
+/**
+ * Returns null if opening tag is incomplete in buffer
+ * @private
+ */
+function openTag(s, i) {
+  let p = i;
+  for (;;) { 
+    ATTR.lastIndex = p; 
+    if (!ATTR.exec(s)) break; 
+    p = ATTR.lastIndex; 
+  }
+  while (p < s.length && /\s/.test(s[p])) p++;
+  if (s[p] === '>') return { end: p, self: false };
+  if (s[p] === '/' && s[p + 1] === '>') return { end: p + 1, self: true };
+  return null;
+}
+
+/**
+ * Extract complete <sms> and <mms> elements from buffer
+ * Handles partial elements at buffer boundaries
+ * Ignores container tags like <smses>, <?xml>, <!-- -->
+ * @param {string} s - XML string buffer
+ * @returns {Object} - { complete: Array<element>, remaining: string }
+ */
+export function extract(s) {
+  const out = []; 
+  let cur = 0;
+  for (;;) {
+    START.lastIndex = cur; 
+    const m = START.exec(s);
+    if (!m) return { complete: out, remaining: s.slice(Math.max(cur, s.length - 16)) };
+    const st = m.index, 
+          ot = openTag(s, st + 1 + m[1].length);
+    if (!ot) return { complete: out, remaining: s.slice(st) };
+    if (ot.self) { 
+      out.push(s.slice(st, ot.end + 1)); 
+      cur = ot.end + 1; 
+      continue; 
+    }
+    const close = '</' + m[1] + '>', 
+          cp = s.indexOf(close, ot.end + 1);
+    if (cp === -1) return { complete: out, remaining: s.slice(st) };
+    out.push(s.slice(st, cp + close.length)); 
+    cur = cp + close.length;
+  }
+}
 
 // ============================================
 // UTILITY FUNCTIONS
