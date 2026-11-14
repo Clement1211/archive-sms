@@ -381,6 +381,11 @@ async function importFile(file) {
 
     // Replace the current archive in one transaction only after the file was fully parsed.
     await replaceAllData(messagesToSave, importedAttachments);
+    selected = null;
+    cleanupObjectUrls();
+    $("messages").replaceChildren();
+    $("chatView").hidden = true;
+    $("emptyChat").hidden = false;
     allMessages = messagesToSave.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0));
     chats = groupMessages(allMessages);
 
