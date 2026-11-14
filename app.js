@@ -85,8 +85,11 @@ function dbOpen() {
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
-      if (e.oldVersion === 0) {
+      // Create stores if they don't exist
+      if (!db.objectStoreNames.contains(STORE_MESSAGES)) {
         db.createObjectStore(STORE_MESSAGES, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(STORE_ATTACHMENTS)) {
         db.createObjectStore(STORE_ATTACHMENTS, { keyPath: "id" });
       }
     };
