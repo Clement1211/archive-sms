@@ -79,6 +79,37 @@ Rendez-vous sur : [https://clement1211.github.io/archive-sms](https://clement121
 - **Sécurité** : Les fichiers XML ne sont jamais envoyés vers un serveur
 - **Suppression** : Utilisez le bouton "Effacer" pour supprimer toutes les données
 
+## 📁 Structure du projet
+
+```
+archive-sms/
+├── index.html              # Page principale
+├── app.js                  # Application principale (Vanilla JS)
+├── parser.js               # Module de parsing XML (testable sous Node)
+├── sw.js                   # Service Worker (PWA)
+├── manifest.webmanifest    # Manifest PWA
+├── favicon.svg             # Favicon SVG
+├── styles.css              # Styles CSS
+├── assets/
+│   ├── icon-192.png        # Icône PWA 192x192
+│   ├── icon-512.png        # Icône PWA 512x512
+│   ├── icon-maskable-192.png # Icône maskable 192x192
+│   ├── icon-maskable-512.png # Icône maskable 512x512
+│   └── apple-touch-icon.png # Icône Apple Touch 180x180
+├── tests/
+│   ├── parser.test.js      # Tests du parseur
+│   └── fixtures/
+│       └── sample.xml      # Fichier XML de test
+├── .gitignore              # Fichiers ignorés par Git
+└── README.md               # Documentation
+```
+
+## 🔧 Configuration requise
+
+- Aucun serveur requis pour l'utilisation en ligne (GitHub Pages)
+- Pour le développement local : un serveur HTTP simple (pour le Service Worker)
+- Navigateurs supportés : Chrome, Firefox, Edge, Safari (iOS)
+
 ## 📄 Licence
 
 MIT © [Clement1211](https://github.com/Clement1211)
