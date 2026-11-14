@@ -21,6 +21,7 @@ const STORE_MESSAGES = "messages";
 const STORE_ATTACHMENTS = "attachments";
 const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
 const BATCH_SIZE = 500;
+const BATCH_SIZE_BYTES = 16 * 1024 * 1024; // 16MB cumulative size limit
 
 // ============================================
 // STATE
@@ -365,6 +366,7 @@ async function importFile(file) {
     const attachmentsToSave = [];
     const currentMessagesBatch = [];
     const currentAttachmentsBatch = [];
+    let currentBatchSize = 0; // Cumulative size in bytes
 
     selected = null;
     await clearAllData();
@@ -378,10 +380,14 @@ async function importFile(file) {
         throw new Error("Import annulé");
       }
 
+      let itemSize = 0;
+
       // Handle SMS
       if (item.address) {
         messagesToSave.push(item);
         currentMessagesBatch.push(item);
+        // Estimate SMS size (body + address + metadata)
+        itemSize = (item.body?.length || 0) * 2 + (item.address?.length || 0) * 2 + 200;
         totalMessages++;
       }
       // Handle MMS (item has message + attachments)
@@ -390,14 +396,23 @@ async function importFile(file) {
         currentMessagesBatch.push(item.message);
         attachmentsToSave.push(...item.attachments);
         currentAttachmentsBatch.push(...item.attachments);
+        // Estimate MMS message size
+        itemSize = (item.message.body?.length || 0) * 2 + (item.message.address?.length || 0) * 2 + 200;
+        // Add attachment sizes
+        for (const att of item.attachments) {
+          itemSize += att.blob?.size || 0;
+        }
         totalMessages++;
       }
 
-      // Flush batches if they reach the limit
-      if (currentMessagesBatch.length >= BATCH_SIZE) {
+      currentBatchSize += itemSize;
+
+      // Flush batches if they reach count OR size limit
+      if (currentMessagesBatch.length >= BATCH_SIZE || currentBatchSize >= BATCH_SIZE_BYTES) {
         await saveBatch(currentMessagesBatch, currentAttachmentsBatch);
         currentMessagesBatch.length = 0;
         currentAttachmentsBatch.length = 0;
+        currentBatchSize = 0;
       }
     }
 
