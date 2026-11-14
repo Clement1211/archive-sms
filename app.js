@@ -530,6 +530,34 @@ function cleanupObjectUrls() {
 }
 
 // ============================================
+// SERVICE WORKER UPDATE HANDLING
+// ============================================
+
+function showUpdateBanner() {
+  const banner = $("updateBanner");
+  const reloadBtn = $("reloadBtn");
+  const closeBtn = $("closeUpdateBtn");
+  
+  if (!banner) return;
+  
+  banner.hidden = false;
+  
+  if (reloadBtn) {
+    reloadBtn.onclick = () => {
+      if (!importController) { // Don't reload during import
+        window.location.reload();
+      }
+    };
+  }
+  
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      banner.hidden = true;
+    };
+  }
+}
+
+// ============================================
 // CONVERSATIONS
 // ============================================
 
@@ -851,8 +879,22 @@ function setupEventListeners() {
     render();
     setupEventListeners();
 
+    // Service Worker registration with update detection
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+      let newWorker;
+      
       navigator.serviceWorker.register("./sw.js").catch(() => {});
+      
+      // Detect when a new service worker is installed and waiting
+      navigator.serviceWorker.addEventListener('updatefound', () => {
+        newWorker = navigator.serviceWorker.installing;
+        newWorker.addEventListener('statechange', () => {
+          // Show banner when new SW is installed and there's a current controller
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            showUpdateBanner();
+          }
+        });
+      });
     }
 
     // Request persistent storage on load

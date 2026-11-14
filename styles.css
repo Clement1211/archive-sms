@@ -11,6 +11,53 @@ body{
   line-height:1.5;
 }
 
+/* Update Banner */
+.update-banner{
+  position:fixed;
+  top:0;
+  left:0;
+  right:0;
+  background:#5c7cfa;
+  color:white;
+  padding:12px 20px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  z-index:1000;
+  font-size:14px;
+}
+
+.update-banner .reload-btn{
+  background:white;
+  color:#5c7cfa;
+  border:none;
+  padding:6px 12px;
+  border-radius:4px;
+  cursor:pointer;
+  font-size:13px;
+  font-weight:600;
+}
+
+.update-banner .reload-btn:hover{
+  background:#f0f0f0;
+}
+
+.update-banner .close-banner-btn{
+  background:none;
+  border:none;
+  color:white;
+  cursor:pointer;
+  font-size:18px;
+  padding:0 0 0 8px;
+  line-height:1;
+  opacity:0.8;
+}
+
+.update-banner .close-banner-btn:hover{
+  opacity:1;
+}
+
 /* Header */
 .topbar{
   height:82px;
