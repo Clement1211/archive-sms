@@ -32,6 +32,10 @@ npm-debug.log*
 # Testing
 coverage/
 
+# Data files - NEVER commit user data
+*.xml
+*.json
+
 # Misc
 *.bak
 *.tmp
