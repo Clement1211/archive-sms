@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<smses>
+  <!-- Simple SMS -->
+  <sms protocol="0" address="+33612345678" date="1609459200000" type="1" subject="null" body="Bonjour ! Comment ça va ?" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />
+  
+  <!-- Outgoing SMS -->
+  <sms protocol="0" address="+33612345678" date="1609459260000" type="2" subject="null" body="Je vais bien, merci ! Et toi ?" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />
+  
+  <!-- SMS with special characters and emojis -->
+  <sms protocol="0" address="+33687654321" date="1609545600000" type="1" subject="null" body="Hello ! 👋 Voici un message avec des emojis 🎉🎊 et des caractères spéciaux : éàèçù@#" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />
+  
+  <!-- SMS with &quot; in body to test escaping -->
+  <sms protocol="0" address="+33699999999" date="1609632000000" type="1" subject="null" body="Il a dit : &quot;Bonjour !&quot;" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />
+  
+  <!-- MMS with attachment (base64 encoded PNG) -->
+  <mms protocol="0" address="+33611111111" date="1609718400000" type="1" subject="Photo" text_only="0" >
+    <addr address="+33611111111" type="137"/>
+    <part seq="0" ct="image/png" name="test-image.png" chset="" cd="" fn="test-image.png" text="" data="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" />
+    <part seq="1" ct="text/plain" text="Voici une image !" />
+  </mms>
+  
+  <!-- Outgoing MMS -->
+  <mms protocol="0" address="+33622222222" date="1609804800000" type="2" subject="Vacances" text_only="0" >
+    <addr address="+33622222222" type="137"/>
+    <part seq="0" ct="image/jpeg" name="vacation.jpg" chset="" cd="" fn="vacation.jpg" text="" data="/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAABAUCAwYBAAf/xAA0EAACAQMCBAQEBQQDAAAAAAABAgMABBEFIQYSMUETUWFxByKBkRQyocHwQrHR4RUj8f/EABQBAQAAAAAAAAAAAAAAAAAAAAD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA" />
+    <part seq="1" ct="text/plain" text="Les photos de vacances !" />
+  </mms>
+  
+  <!-- SMS with > in attribute (should not break parser) -->
+  <sms protocol="0" address="+33633333333" date="1609891200000" type="1" subject="null" body="Test message with > character" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" />
+</smses>
