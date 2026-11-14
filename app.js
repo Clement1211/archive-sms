@@ -1,8 +1,11 @@
 /**
  * Archives SMS - Web App for reading SMS Backup & Restore XML files
  * 
- * Enhanced version with streaming XML parser for large files (200MB+)
- * Compatible with iPhone 17 and Safari iOS
+ * Enhanced version with:
+ * - Streaming XML parser for large files (200MB+)
+ * - Proper attachment storage in IndexedDB
+ * - Memory-efficient batch processing
+ * - Compatible with iPhone 17 and Safari iOS
  * 
  * @author Clement1211
  * @license MIT
@@ -13,9 +16,11 @@
 // ============================================
 
 const DB_NAME = "archives-sms-db";
-const STORE = "archive";
-const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB chunks
-const BATCH_SIZE = 500; // Messages per batch
+const DB_VERSION = 2;
+const STORE_MESSAGES = "messages";
+const STORE_ATTACHMENTS = "attachments";
+const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
+const BATCH_SIZE = 500;
 
 // ============================================
 // STATE
@@ -26,6 +31,7 @@ let allMessages = [];
 let chats = [];
 let selected = null;
 let importController = null;
+let activeObjectUrls = new Set();
 
 // ============================================
 // DOM HELPERS
@@ -35,6 +41,7 @@ const $ = id => document.getElementById(id);
 
 function toast(message, duration = 2600) {
   const el = $("status");
+  if (!el) return;
   el.textContent = message;
   el.classList.add("show");
   setTimeout(() => el.classList.remove("show"), duration);
@@ -53,8 +60,7 @@ function updateProgress(bytesRead, totalBytes) {
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function showLoader() {
@@ -69,325 +75,438 @@ function hideLoader() {
 }
 
 // ============================================
-// INDEXEDDB MANAGEMENT
+// INDEXEDDB - Simple Promise-based wrapper
 // ============================================
 
-function openDB() {
+function dbOpen() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onerror = (event) => reject(event.target.error);
-    request.onsuccess = (event) => resolve(event.target.result);
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (e.oldVersion === 0) {
+        db.createObjectStore(STORE_MESSAGES, { keyPath: "id" });
+        db.createObjectStore(STORE_ATTACHMENTS, { keyPath: "id" });
       }
     };
   });
 }
 
-function save(key, value) {
+function dbTx(storeNames, mode, callback) {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).put(value, key);
+    const tx = db.transaction(storeNames, mode);
+    callback(tx);
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
   });
 }
 
-function read(key) {
+function dbGet(store, key) {
   return new Promise((resolve, reject) => {
-    const r = db.transaction(STORE).objectStore(STORE).get(key);
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
+    const req = db.transaction(store, "readonly").objectStore(store).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
 }
 
-function saveMessageBatch(messages) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
-    for (const msg of messages) {
-      store.put(msg, `msg-${msg.id}`);
-    }
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function clearAllData() {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).clear();
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function loadAllMessages() {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readonly");
-    const store = tx.objectStore(STORE);
-    const request = store.getAll();
-    request.onsuccess = () => {
-      const messages = request.result.filter(item => 
-        typeof item === 'object' && item.address !== undefined
-      );
-      resolve(messages.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0)));
-    };
-    request.onerror = () => reject(request.error);
-  });
+function dbClear(store) {
+  return dbTx([store], "readwrite", (tx) => tx.objectStore(store).clear());
 }
 
 // ============================================
-// XML PARSING FUNCTIONS
+// XML PARSING - Streaming, memory-efficient
 // ============================================
 
-/**
- * Parse date string (timestamp in milliseconds or seconds)
- */
-function parseDateString(dateString) {
-  if (!dateString) return null;
-  let n = Number(dateString);
+function parseDateString(s) {
+  if (!s) return null;
+  let n = Number(s);
   if (!Number.isFinite(n)) return null;
-  if (n < 1e12) n *= 1000;
+  if (n < 1e12) n *= 1000; // milliseconds
   const d = new Date(n);
   return isNaN(d) ? null : d;
 }
 
-/**
- * Parse a single SMS element
- */
-function parseSmsElement(elementString) {
+function parseSmsElement(xmlString) {
   try {
     const parser = new DOMParser();
-    const doc = parser.parseFromString(elementString, 'application/xml');
-    const parserError = doc.querySelector('parsererror');
+    const doc = parser.parseFromString(xmlString, "application/xml");
+    const parserError = doc.querySelector("parsererror");
     if (parserError) return null;
-    
-    const element = doc.documentElement;
-    if (element.tagName.toLowerCase() !== 'sms') return null;
-    
-    const type = element.getAttribute('type');
-    const address = (element.getAttribute('address') || 'Inconnu').trim().replace(/\s+/g, ' ');
-    const date = parseDateString(element.getAttribute('date'));
-    const body = element.getAttribute('body') || '';
-    const isOutgoing = type === '2';
-    
+
+    const el = doc.documentElement;
+    if (el.tagName.toLowerCase() !== "sms") return null;
+
+    const type = el.getAttribute("type");
+    const address = (el.getAttribute("address") || "Inconnu").trim().replace(/\s+/g, " ");
+    const date = parseDateString(el.getAttribute("date"));
+    const body = el.getAttribute("body") || "";
+    const isOutgoing = type === "2";
+
     return {
-      id: Date.now() + Math.random(),
+      id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       address,
       body,
       date,
-      kind: 'sms',
+      kind: "sms",
       out: isOutgoing,
       attachments: []
     };
   } catch (e) {
-    console.warn('Error parsing SMS:', e);
+    console.warn("SMS parse error:", e);
     return null;
   }
 }
 
-/**
- * Parse an MMS element with parts
- */
-function parseMmsElement(elementString) {
+function parseMmsElement(xmlString) {
   try {
     const parser = new DOMParser();
-    const doc = parser.parseFromString(elementString, 'application/xml');
-    const parserError = doc.querySelector('parsererror');
+    const doc = parser.parseFromString(xmlString, "application/xml");
+    const parserError = doc.querySelector("parsererror");
     if (parserError) return null;
-    
-    const element = doc.documentElement;
-    if (element.tagName.toLowerCase() !== 'mms') return null;
-    
-    const type = element.getAttribute('type');
-    let address = (element.getAttribute('address') || 'Inconnu').trim().replace(/\s+/g, ' ');
-    const date = parseDateString(element.getAttribute('date'));
-    const isOutgoing = type === '2';
-    
-    let body = '';
-    const attachments = [];
-    
-    // Parse parts
-    const parts = element.getElementsByTagName('part');
+
+    const el = doc.documentElement;
+    if (el.tagName.toLowerCase() !== "mms") return null;
+
+    const type = el.getAttribute("type");
+    let address = (el.getAttribute("address") || "Inconnu").trim().replace(/\s+/g, " ");
+    const date = parseDateString(el.getAttribute("date"));
+    const isOutgoing = type === "2";
+
+    let body = "";
+    const rawAttachments = []; // { blob, type, name }
+
+    const parts = el.getElementsByTagName("part");
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
-      const ct = part.getAttribute('ct') || '';
-      const text = part.getAttribute('text');
-      const data = part.getAttribute('data');
-      const cl = part.getAttribute('cl') || `piece-jointe-${i + 1}`;
-      
-      if (ct.startsWith('text/') && text) {
-        body += (body ? '\n' : '') + text;
+      const ct = part.getAttribute("ct") || "";
+      const text = part.getAttribute("text");
+      const data = part.getAttribute("data");
+      const cl = part.getAttribute("cl") || `piece-jointe-${i + 1}`;
+
+      if (ct.startsWith("text/") && text) {
+        body += (body ? "\n" : "") + text;
       } else if (data) {
         try {
-          const raw = atob(data.replace(/\s/g, ''));
-          const bytes = new Uint8Array(raw.length);
+          const cleanData = data.replace(/\s/g, "");
+          const raw = atob(cleanData);
+          const bytes = new Uint8Array(new ArrayBuffer(raw.length));
           for (let j = 0; j < raw.length; j++) {
             bytes[j] = raw.charCodeAt(j);
           }
-          // Store as data URL for now (Step 2 will improve this)
-          const blob = new Blob([bytes], { type: ct || 'application/octet-stream' });
-          const dataUrl = URL.createObjectURL(blob);
-          attachments.push({
-            type: ct || 'application/octet-stream',
-            dataUrl,
-            name: cl
-          });
+          const blob = new Blob([bytes], { type: ct || "application/octet-stream" });
+          rawAttachments.push({ blob, type: ct || "application/octet-stream", name: cl });
         } catch (e) {
-          console.warn('Failed to decode attachment:', e);
+          console.warn("Failed to decode MMS attachment:", e);
         }
       }
     }
-    
-    // Get addresses from addr tags
-    const addrs = Array.from(element.getElementsByTagName('addr'))
-      .map(a => a.getAttribute('address'))
+
+    const addrs = Array.from(el.getElementsByTagName("addr"))
+      .map(a => a.getAttribute("address"))
       .filter(Boolean);
-    
-    if (address === 'Inconnu' && addrs.length > 0) {
+    if (address === "Inconnu" && addrs.length > 0) {
       address = addrs[0];
     }
-    
+
+    // Generate attachment IDs upfront
+    const attachmentIds = [];
+    for (let i = 0; i < rawAttachments.length; i++) {
+      attachmentIds.push(`att-${Date.now()}-${i}`);
+    }
+
     return {
-      id: Date.now() + Math.random(),
-      address,
-      body: body || (attachments.length ? 'Média' : ''),
-      date,
-      kind: 'mms',
-      out: isOutgoing,
-      attachments
+      message: {
+        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        address,
+        body: body || (rawAttachments.length ? "Média" : ""),
+        date,
+        kind: "mms",
+        out: isOutgoing,
+        attachments: attachmentIds
+      },
+      attachments: rawAttachments.map((att, idx) => ({
+        id: attachmentIds[idx],
+        blob: att.blob,
+        type: att.type,
+        name: att.name
+      }))
     };
   } catch (e) {
-    console.warn('Error parsing MMS:', e);
+    console.warn("MMS parse error:", e);
     return null;
   }
 }
 
-/**
- * Extract complete XML elements from buffer
- */
-function extractElements(buffer) {
+function extractElementsFromBuffer(buffer) {
   const complete = [];
   let remaining = buffer;
   let pos = 0;
-  
+
   while (pos < remaining.length) {
-    const openPos = remaining.indexOf('<', pos);
+    const openPos = remaining.indexOf("<", pos);
     if (openPos === -1) break;
-    
-    const closePos = remaining.indexOf('>', openPos);
+
+    const closePos = remaining.indexOf(">", openPos);
     if (closePos === -1) break;
-    
-    const tagStart = openPos;
-    const tagEnd = closePos;
+
     const tag = remaining.substring(openPos, closePos + 1);
-    
+
     // Self-closing tag
-    if (tag.endsWith('/>')) {
+    if (tag.endsWith("/>")) {
       complete.push(tag);
-      pos = tagEnd + 1;
-      remaining = remaining.substring(0, tagStart) + remaining.substring(tagEnd + 1);
+      remaining = remaining.substring(0, openPos) + remaining.substring(closePos + 1);
       pos = 0;
       continue;
     }
-    
-    // Opening tag - find closing tag
+
     const tagNameMatch = tag.match(/<(\w+)/);
     if (!tagNameMatch) {
-      pos = tagEnd + 1;
+      pos = closePos + 1;
       continue;
     }
-    
+
     const tagName = tagNameMatch[1];
     const closingTag = `</${tagName}>`;
-    const closeTagPos = remaining.indexOf(closingTag, tagEnd + 1);
-    
+    const closeTagPos = remaining.indexOf(closingTag, closePos + 1);
     if (closeTagPos === -1) break;
-    
-    const element = remaining.substring(tagStart, closeTagPos + closingTag.length);
+
+    const element = remaining.substring(openPos, closeTagPos + closingTag.length);
     complete.push(element);
+    remaining = remaining.substring(0, openPos) + remaining.substring(closeTagPos + closingTag.length);
     pos = 0;
-    remaining = remaining.substring(0, tagStart) + remaining.substring(closeTagPos + closingTag.length);
   }
-  
+
   return { complete, remaining };
 }
 
-/**
- * Streaming XML parser
- */
-async function* parseXmlStreaming(file, signal = null, onProgress = null) {
-  let buffer = '';
+async function* parseXmlStreaming(file, signal, onProgress) {
+  let buffer = "";
   let bytesRead = 0;
-  let totalBytes = file.size;
-  
+  const totalBytes = file.size;
+
   if (signal?.aborted) return;
-  
+
   try {
     while (bytesRead < totalBytes) {
       if (signal?.aborted) return;
-      
+
       const endPos = Math.min(bytesRead + CHUNK_SIZE, totalBytes);
       const chunk = file.slice(bytesRead, endPos);
       const chunkText = await chunk.text();
       buffer += chunkText;
-      bytesRead += chunk.size;
-      
-      if (onProgress) {
-        onProgress(bytesRead, totalBytes);
-      }
-      
-      const { complete, remaining } = extractElements(buffer);
+      bytesRead += (endPos - bytesRead);
+
+      if (onProgress) onProgress(bytesRead, totalBytes);
+
+      const { complete, remaining } = extractElementsFromBuffer(buffer);
       buffer = remaining;
-      
+
       for (const element of complete) {
         if (signal?.aborted) return;
-        
+
         const tagName = element.match(/<(\w+)/)?.[1]?.toLowerCase();
-        
-        if (tagName === 'sms') {
+        if (tagName === "sms") {
           const msg = parseSmsElement(element);
           if (msg) yield msg;
-        } else if (tagName === 'mms') {
-          const msg = parseMmsElement(element);
-          if (msg) yield msg;
+        } else if (tagName === "mms") {
+          const result = parseMmsElement(element);
+          if (result) yield result;
         }
       }
     }
-    
+
     // Process remaining buffer
     if (buffer) {
-      const { complete } = extractElements(buffer);
+      const { complete } = extractElementsFromBuffer(buffer);
       for (const element of complete) {
         if (signal?.aborted) return;
         const tagName = element.match(/<(\w+)/)?.[1]?.toLowerCase();
-        if (tagName === 'sms') {
+        if (tagName === "sms") {
           const msg = parseSmsElement(element);
           if (msg) yield msg;
-        } else if (tagName === 'mms') {
-          const msg = parseMmsElement(element);
-          if (msg) yield msg;
+        } else if (tagName === "mms") {
+          const result = parseMmsElement(element);
+          if (result) yield result;
         }
       }
     }
   } catch (e) {
-    console.error('Streaming parse error:', e);
+    console.error("Streaming parse error:", e);
     throw e;
   }
 }
 
-function createAbortController() {
-  return {
-    signal: { aborted: false },
-    abort: () => { this.signal.aborted = true; }
-  };
+// ============================================
+// IMPORT
+// ============================================
+
+async function importFile(file) {
+  if (!file || !db) return;
+
+  const abortController = { signal: { aborted: false } };
+  importController = abortController;
+
+  showLoader();
+  updateProgress(0, file.size);
+
+  try {
+    let totalMessages = 0;
+    const messagesToSave = [];
+    const attachmentsToSave = [];
+    const currentMessagesBatch = [];
+    const currentAttachmentsBatch = [];
+
+    selected = null;
+    await clearAllData();
+
+    const stream = parseXmlStreaming(file, abortController.signal, (br, total) => {
+      updateProgress(br, total);
+    });
+
+    for await (const item of stream) {
+      if (abortController.signal.aborted) {
+        throw new Error("Import annulé");
+      }
+
+      // Handle SMS
+      if (item.address) {
+        messagesToSave.push(item);
+        currentMessagesBatch.push(item);
+        totalMessages++;
+      }
+      // Handle MMS (item has message + attachments)
+      else if (item.message) {
+        messagesToSave.push(item.message);
+        currentMessagesBatch.push(item.message);
+        attachmentsToSave.push(...item.attachments);
+        currentAttachmentsBatch.push(...item.attachments);
+        totalMessages++;
+      }
+
+      // Flush batches if they reach the limit
+      if (currentMessagesBatch.length >= BATCH_SIZE) {
+        await saveBatch(currentMessagesBatch, currentAttachmentsBatch);
+        currentMessagesBatch.length = 0;
+        currentAttachmentsBatch.length = 0;
+      }
+    }
+
+    // Flush remaining
+    if (currentMessagesBatch.length > 0) {
+      await saveBatch(currentMessagesBatch, currentAttachmentsBatch);
+    }
+
+    // Load all messages for rendering
+    allMessages = messagesToSave.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0));
+    chats = groupMessages(allMessages);
+
+    // Request persistent storage
+    if ("storage" in navigator && "persist" in navigator.storage) {
+      try {
+        await navigator.storage.persist();
+      } catch (e) {
+        console.warn("Storage persist failed:", e);
+      }
+    }
+
+    hideLoader();
+    render();
+    toast(`${totalMessages} messages importés`);
+
+  } catch (error) {
+    hideLoader();
+    if (error.message === "Import annulé") {
+      toast("Import annulé");
+    } else {
+      console.error("Import error:", error);
+      toast(`Erreur: ${error.message}`);
+    }
+  } finally {
+    importController = null;
+  }
+}
+
+// Save a batch of messages and attachments in a single transaction
+function saveBatch(messages, attachments) {
+  return dbTx([STORE_MESSAGES, STORE_ATTACHMENTS], "readwrite", (tx) => {
+    const msgStore = tx.objectStore(STORE_MESSAGES);
+    const attStore = tx.objectStore(STORE_ATTACHMENTS);
+
+    for (const msg of messages) {
+      msgStore.put(msg);
+    }
+
+    for (const att of attachments) {
+      attStore.put({
+        id: att.id,
+        blob: att.blob,
+        type: att.type,
+        name: att.name
+      });
+    }
+  });
+}
+
+async function clearAllData() {
+  await Promise.all([
+    dbClear(STORE_MESSAGES),
+    dbClear(STORE_ATTACHMENTS)
+  ]);
+  allMessages = [];
+  chats = [];
+  cleanupObjectUrls();
 }
 
 // ============================================
-// CONVERSATION MANAGEMENT
+// LOAD DATA
+// ============================================
+
+async function loadAllMessagesFromDB() {
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_MESSAGES, "readonly");
+    const store = tx.objectStore(STORE_MESSAGES);
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const messages = req.result || [];
+      resolve(messages.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0)));
+    };
+    req.onerror = () => resolve([]);
+  });
+}
+
+async function loadAttachment(attachmentId) {
+  return new Promise(async (resolve) => {
+    const tx = db.transaction(STORE_ATTACHMENTS, "readonly");
+    const store = tx.objectStore(STORE_ATTACHMENTS);
+    const req = store.get(attachmentId);
+    req.onsuccess = () => {
+      const att = req.result;
+      if (att && att.blob) {
+        const url = URL.createObjectURL(att.blob);
+        activeObjectUrls.add(url);
+        resolve({ id: att.id, url, type: att.type, name: att.name, blob: att.blob });
+      } else {
+        resolve(null);
+      }
+    };
+    req.onerror = () => resolve(null);
+  });
+}
+
+function cleanupObjectUrls() {
+  for (const url of activeObjectUrls) {
+    try {
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      // ignore
+    }
+  }
+  activeObjectUrls.clear();
+}
+
+// ============================================
+// CONVERSATIONS
 // ============================================
 
 function groupMessages(msgs) {
@@ -407,127 +526,59 @@ function groupMessages(msgs) {
 }
 
 // ============================================
-// IMPORT FUNCTION
-// ============================================
-
-async function importFile(file) {
-  if (!file) return;
-  
-  importController = createAbortController();
-  showLoader();
-  updateProgress(0, file.size);
-  
-  try {
-    let allMessages = [];
-    let currentBatch = [];
-    let messageCount = 0;
-    
-    selected = null;
-    await clearAllData();
-    
-    const messagesStream = parseXmlStreaming(
-      file,
-      importController.signal,
-      (bytesRead, totalBytes) => {
-        updateProgress(bytesRead, totalBytes);
-      }
-    );
-    
-    for await (const msg of messagesStream) {
-      if (importController.signal.aborted) {
-        throw new Error("Import annulé");
-      }
-      
-      currentBatch.push(msg);
-      allMessages.push(msg);
-      messageCount++;
-      
-      if (currentBatch.length >= BATCH_SIZE) {
-        await saveMessageBatch(currentBatch);
-        currentBatch = [];
-      }
-    }
-    
-    if (currentBatch.length > 0) {
-      await saveMessageBatch(currentBatch);
-    }
-    
-    chats = groupMessages(allMessages);
-    
-    // Request persistent storage
-    if ('storage' in navigator && 'persist' in navigator.storage) {
-      try {
-        await navigator.storage.persist();
-        const estimation = await navigator.storage.estimate();
-        console.log("Storage quota:", estimation);
-      } catch (e) {
-        console.warn("Storage persist failed:", e);
-      }
-    }
-    
-    hideLoader();
-    render();
-    toast(`${messageCount} messages importés`);
-    
-  } catch (error) {
-    hideLoader();
-    if (error.message === "Import annulé") {
-      toast("Import annulé");
-    } else {
-      console.error("Import error:", error);
-      toast(`Erreur: ${error.message}`);
-    }
-  } finally {
-    importController = null;
-  }
-}
-
-// ============================================
-// RENDERING FUNCTIONS
+// RENDERING
 // ============================================
 
 function render() {
-  $("welcome").hidden = allMessages.length > 0 || chats.length > 0;
-  $("workspace").hidden = !allMessages.length && !chats.length;
-  $("chatCount").textContent = chats.length.toString();
+  const welcomeEl = $("welcome");
+  const workspaceEl = $("workspace");
+  const chatCountEl = $("chatCount");
+
+  if (welcomeEl) welcomeEl.hidden = allMessages.length > 0 || chats.length > 0;
+  if (workspaceEl) workspaceEl.hidden = allMessages.length === 0 && chats.length === 0;
+  if (chatCountEl) chatCountEl.textContent = chats.length.toString();
+
   renderList();
 }
 
 function renderList() {
-  const q = $("search").value.toLocaleLowerCase("fr");
+  const q = $("search")?.value?.toLocaleLowerCase("fr") || "";
   const list = $("chatList");
+  if (!list) return;
+
   list.innerHTML = "";
-  
+
   const filtered = chats.filter(c =>
     c.address.toLocaleLowerCase("fr").includes(q) ||
-    c.last?.body?.toLocaleLowerCase("fr").includes(q)
+    (c.last?.body?.toLocaleLowerCase("fr") || "").includes(q)
   );
-  
+
   for (const c of filtered) {
     const item = document.createElement("div");
     item.className = "chat-item" + (selected === c.address ? " active" : "");
-    
+
     const av = document.createElement("div");
     av.className = "avatar";
-    av.textContent = (c.address.replace(/\D/g, "").slice(-2) || "?");
-    
+    av.textContent = (c.address.replace(/\D/g, "").slice(-2) || "?").toUpperCase();
+
     const meta = document.createElement("div");
     meta.className = "chat-meta";
+
     const line = document.createElement("div");
     line.className = "chat-line";
-    
+
     const name = document.createElement("span");
     name.className = "chat-name";
     name.textContent = c.address;
-    
+
     const dt = document.createElement("span");
     dt.className = "chat-date";
     dt.textContent = fmtDate(c.last?.date);
-    
+
     const preview = document.createElement("div");
     preview.className = "chat-preview";
     preview.textContent = (c.last?.out ? "Vous : " : "") + (c.last?.body || "");
-    
+
     line.append(name, dt);
     meta.append(line, preview);
     item.append(av, meta);
@@ -537,69 +588,103 @@ function renderList() {
 }
 
 function fmtDate(d) {
-  return d ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(d) : "";
+  if (!d) return "";
+  return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(d);
 }
 
 function fmtTime(d) {
-  return d ? new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(d) : "";
+  if (!d) return "";
+  return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(d);
 }
 
 function openChat(address) {
   selected = address;
   const c = chats.find(x => x.address === address);
   if (!c) return;
-  
-  $("emptyChat").hidden = true;
-  $("chatView").hidden = false;
-  $("chatTitle").textContent = address;
-  $("chatSubtitle").textContent = `${c.messages.length} messages`;
-  
-  $("messages").innerHTML = "";
+
+  cleanupObjectUrls();
+
+  const emptyChatEl = $("emptyChat");
+  const chatViewEl = $("chatView");
+  const chatTitleEl = $("chatTitle");
+  const chatSubtitleEl = $("chatSubtitle");
+  const messagesEl = $("messages");
+
+  if (emptyChatEl) emptyChatEl.hidden = true;
+  if (chatViewEl) chatViewEl.hidden = false;
+  if (chatTitleEl) chatTitleEl.textContent = address;
+  if (chatSubtitleEl) chatSubtitleEl.textContent = `${c.messages.length} messages`;
+
+  if (messagesEl) messagesEl.innerHTML = "";
+
   let lastDay = "";
-  
+
   for (const m of c.messages) {
     const day = fmtDate(m.date);
     if (day !== lastDay) {
       const sep = document.createElement("div");
       sep.className = "day-divider";
       sep.textContent = day || "Date inconnue";
-      $("messages").append(sep);
+      messagesEl.append(sep);
       lastDay = day;
     }
-    
+
     const bubble = document.createElement("div");
     bubble.className = "msg " + (m.out ? "out" : "in");
-    bubble.textContent = m.body || "";
-    
-    for (const a of m.attachments || []) {
-      if (a.type.startsWith("image/") && a.dataUrl) {
-        const img = document.createElement("img");
-        img.className = "attachment";
-        img.src = a.dataUrl;
-        img.alt = "Image MMS";
-        bubble.append(img);
-      } else if (a.dataUrl) {
-        const link = document.createElement("a");
-        link.className = "attachment-link";
-        link.href = a.dataUrl;
-        link.download = a.name;
-        link.textContent = "Télécharger " + a.name;
-        bubble.append(link);
+
+    if (m.body) {
+      const text = document.createElement("span");
+      text.textContent = m.body;
+      bubble.append(text, " ");
+    }
+
+    // Load attachments
+    if (m.attachments && m.attachments.length > 0) {
+      for (const attId of m.attachments) {
+        const attPlaceholder = document.createElement("span");
+        attPlaceholder.className = "attachment-loading";
+        attPlaceholder.textContent = "Chargement...";
+        bubble.append(attPlaceholder);
+
+        loadAttachment(attId).then(att => {
+          if (att) {
+            attPlaceholder.remove();
+            if (att.type.startsWith("image/")) {
+              const img = document.createElement("img");
+              img.className = "attachment";
+              img.src = att.url;
+              img.alt = att.name;
+              bubble.append(img);
+            } else {
+              const link = document.createElement("a");
+              link.className = "attachment-link";
+              link.href = att.url;
+              link.download = att.name;
+              link.textContent = "Télécharger " + att.name;
+              link.onclick = () => {
+                // Auto-cleanup after download
+                setTimeout(() => URL.revokeObjectURL(att.url), 10000);
+              };
+              bubble.append(link);
+            }
+          }
+        });
       }
     }
-    
+
     const time = document.createElement("span");
     time.className = "msg-time";
     time.textContent = fmtTime(m.date);
     bubble.append(time);
-    $("messages").append(bubble);
+    messagesEl.append(bubble);
   }
-  
-  $("messages").scrollTop = $("messages").scrollHeight;
+
+  if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
   renderList();
-  
+
   if (innerWidth <= 700) {
-    $("workspace").querySelector(".conversation").classList.add("mobile-open");
+    const convEl = $("workspace")?.querySelector(".conversation");
+    if (convEl) convEl.classList.add("mobile-open");
   }
 }
 
@@ -607,89 +692,128 @@ function openChat(address) {
 // EVENT LISTENERS
 // ============================================
 
-$("importBtn").onclick = $("welcomeImport").onclick = () => $("fileInput").click();
-$("fileInput").onchange = e => importFile(e.target.files[0]);
-$("search").oninput = renderList;
-$("backBtn").onclick = () => {
-  $("workspace").querySelector(".conversation").classList.remove("mobile-open");
-};
+function setupEventListeners() {
+  const fileInput = $("fileInput");
+  const importBtn = $("importBtn");
+  const welcomeImport = $("welcomeImport");
+  const search = $("search");
+  const backBtn = $("backBtn");
+  const exportBtn = $("exportBtn");
+  const clearBtn = $("clearBtn");
+  const cancelBtn = $("cancelImportBtn");
+  const helpBtn = $("helpBtn");
+  const closeHelp = $("closeHelp");
+  const helpModal = $("helpModal");
+  const privacyLink = $("privacyLink");
+  const closePrivacy = $("closePrivacy");
+  const privacyModal = $("privacyModal");
+  const installBtn = $("installBtn");
 
-$("exportBtn").onclick = async () => {
-  const messages = await loadAllMessages();
-  const data = JSON.stringify({
-    messages: messages.map(m => ({ ...m, attachments: [] })),
-    exportedAt: new Date().toISOString()
-  }, null, 2);
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
-  a.download = "archives-sms-export.json";
-  a.click();
-  URL.revokeObjectURL(a.href);
-  toast("Export JSON préparé");
-};
+  if (fileInput) fileInput.onchange = e => importFile(e.target.files[0]);
+  if (importBtn) importBtn.onclick = () => fileInput?.click();
+  if (welcomeImport) welcomeImport.onclick = () => fileInput?.click();
+  if (search) search.oninput = renderList;
+  if (backBtn) backBtn.onclick = () => {
+    cleanupObjectUrls();
+    const convEl = $("workspace")?.querySelector(".conversation");
+    if (convEl) convEl.classList.remove("mobile-open");
+  };
 
-$("clearBtn").onclick = async () => {
-  if (!confirm("Effacer toutes les conversations stockées sur cet appareil ? Cette action est irréversible.")) return;
-  await clearAllData();
-  allMessages = [];
-  chats = [];
-  selected = null;
-  render();
-  toast("Archive effacée");
-};
+  if (exportBtn) exportBtn.onclick = async () => {
+    const messages = await loadAllMessagesFromDB();
+    const data = JSON.stringify({
+      messages: messages.map(m => ({
+        id: m.id,
+        address: m.address,
+        body: m.body,
+        date: m.date?.toISOString(),
+        kind: m.kind,
+        out: m.out,
+        attachments: m.attachments
+      })),
+      exportedAt: new Date().toISOString()
+    }, null, 2);
 
-// Modal handlers
-function openHelpModal() { $("helpModal").hidden = false; }
-function closeHelpModal() { $("helpModal").hidden = true; }
-$("helpBtn").onclick = openHelpModal;
-$("closeHelp").onclick = closeHelpModal;
-$("helpModal").onclick = e => { if (e.target === $("helpModal")) closeHelpModal(); };
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
+    a.download = "archives-sms-export.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("Export JSON préparé");
+  };
 
-function openPrivacyModal() { $("privacyModal").hidden = false; }
-function closePrivacyModal() { $("privacyModal").hidden = true; }
-$("privacyLink").onclick = e => { e.preventDefault(); openPrivacyModal(); };
-$("closePrivacy").onclick = closePrivacyModal;
-$("privacyModal").onclick = e => { if (e.target === $("privacyModal")) closePrivacyModal(); };
+  if (clearBtn) clearBtn.onclick = async () => {
+    if (!confirm("Effacer toutes les conversations stockées sur cet appareil ? Cette action est irréversible.")) return;
+    cleanupObjectUrls();
+    await clearAllData();
+    render();
+    toast("Archive effacée");
+  };
 
-$("cancelImportBtn").onclick = () => {
-  if (importController) {
-    importController.abort();
-    importController = null;
-    hideLoader();
-    toast("Import annulé");
-  }
-};
-
-// PWA Install
-let deferredPrompt;
-function showInstallBtn() { if ($("installBtn")) $("installBtn").hidden = false; }
-function hideInstallBtn() { if ($("installBtn")) $("installBtn").hidden = true; }
-
-if ($("installBtn")) {
-  $("installBtn").onclick = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === "accepted") {
-        toast("Installation en cours...");
-        hideInstallBtn();
-      }
-      deferredPrompt = null;
+  if (cancelBtn) cancelBtn.onclick = () => {
+    if (importController) {
+      importController.signal.aborted = true;
+      importController = null;
+      hideLoader();
+      toast("Import annulé");
     }
   };
+
+  // Modal handlers
+  if (helpBtn) helpBtn.onclick = () => { if (helpModal) helpModal.hidden = false; };
+  if (closeHelp) closeHelp.onclick = () => { if (helpModal) helpModal.hidden = true; };
+  if (helpModal) helpModal.onclick = e => { if (e.target === helpModal) helpModal.hidden = true; };
+
+  if (privacyLink) privacyLink.onclick = e => {
+    e.preventDefault();
+    if (privacyModal) privacyModal.hidden = false;
+  };
+  if (closePrivacy) closePrivacy.onclick = () => { if (privacyModal) privacyModal.hidden = true; };
+  if (privacyModal) privacyModal.onclick = e => { if (e.target === privacyModal) privacyModal.hidden = true; };
+
+  // PWA Install
+  if (installBtn) installBtn.hidden = true;
+  let deferredPrompt;
+
+  if (installBtn) {
+    installBtn.onclick = async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === "accepted") {
+          toast("Installation en cours...");
+          installBtn.hidden = true;
+        }
+        deferredPrompt = null;
+      }
+    };
+  }
+
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (installBtn) installBtn.hidden = false;
+  });
+
+  window.addEventListener("appinstalled", () => {
+    toast("App installée !");
+    if (installBtn) installBtn.hidden = true;
+    deferredPrompt = null;
+  });
+
+  // Keyboard
+  window.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      if (helpModal && !helpModal.hidden) helpModal.hidden = true;
+      if (privacyModal && !privacyModal.hidden) privacyModal.hidden = true;
+      if (innerWidth <= 700) {
+        cleanupObjectUrls();
+        const convEl = $("workspace")?.querySelector(".conversation");
+        if (convEl) convEl.classList.remove("mobile-open");
+      }
+    }
+  });
 }
-
-window.addEventListener("beforeinstallprompt", e => {
-  e.preventDefault();
-  deferredPrompt = e;
-  showInstallBtn();
-});
-
-window.addEventListener("appinstalled", () => {
-  toast("App installée !");
-  hideInstallBtn();
-  deferredPrompt = null;
-});
 
 // ============================================
 // INITIALIZATION
@@ -697,27 +821,27 @@ window.addEventListener("appinstalled", () => {
 
 (async () => {
   try {
-    db = await openDB();
-    allMessages = await loadAllMessages();
+    db = await dbOpen();
+    allMessages = await loadAllMessagesFromDB();
     chats = groupMessages(allMessages);
     render();
-    
+    setupEventListeners();
+
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});
     }
+
+    // Request persistent storage on load
+    if ("storage" in navigator && "persist" in navigator.storage) {
+      try {
+        await navigator.storage.persist();
+      } catch (e) {
+        console.warn("Storage persist on load failed:", e);
+      }
+    }
+
   } catch (e) {
     console.error("DB initialization error:", e);
     toast("Stockage local indisponible dans ce navigateur");
   }
 })();
-
-// Handle keyboard shortcuts
-window.addEventListener("keydown", e => {
-  if (e.key === "Escape") {
-    if (!$("helpModal").hidden) closeHelpModal();
-    if (!$("privacyModal").hidden) closePrivacyModal();
-    if (innerWidth <= 700 && !$("emptyChat").hidden) {
-      $("workspace").querySelector(".conversation").classList.remove("mobile-open");
-    }
-  }
-});
