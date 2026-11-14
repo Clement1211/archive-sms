@@ -4,7 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#101827">
-  <title>Archives SMS</title>
+  <meta name="description" content="Lisez vos archives de SMS exportées depuis SMS Backup & Restore. Application web locale, 100% gratuite et sans serveur.">
+  <meta name="keywords" content="SMS, archive, backup, restore, XML, Android, export, import">
+  <meta name="author" content="Clement1211">
+  
+  <!-- Open Graph / Social Media -->
+  <meta property="og:title" content="Archives SMS - Lisez vos exports XML">
+  <meta property="og:description" content="Lisez vos archives de SMS exportées depuis SMS Backup & Restore. Application web locale, 100% gratuite et sans serveur.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://clement1211.github.io/archive-sms">
+  <meta property="og:image" content="https://clement1211.github.io/archive-sms/assets/icons/icon-512.png">
+  
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Archives SMS">
+  <meta name="twitter:description" content="Lisez vos archives de SMS exportées depuis SMS Backup & Restore">
+  <meta name="twitter:image" content="https://clement1211.github.io/archive-sms/assets/icons/icon-512.png">
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+  
+  <title>Archives SMS - Lisez vos exports XML de SMS Backup & Restore</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -15,9 +36,13 @@
       <h1>Messages</h1>
     </div>
     <div class="header-actions">
-      <button id="installBtn" class="secondary" hidden>Installer l'app</button>
+      <button id="installBtn" class="secondary" hidden>
+        <span class="btn-icon">📱</span> Installer
+      </button>
       <button id="helpBtn" class="secondary">❓ Aide</button>
-      <button id="importBtn" class="primary">＋ Importer XML</button>
+      <button id="importBtn" class="primary">
+        <span class="btn-icon">＋</span> Importer XML
+      </button>
     </div>
     <input id="fileInput" type="file" accept=".xml,text/xml,application/xml" hidden>
   </header>
@@ -25,75 +50,145 @@
   <main>
     <section id="welcome" class="welcome">
       <div class="bubble-icon">✉</div>
-      <h2>Retrouve tes anciennes conversations</h2>
-      <p>Importe un export XML de <strong>SMS Backup &amp; Restore</strong>. Les données sont conservées dans le stockage de ce navigateur, sur cet appareil.</p>
-      <button id="welcomeImport" class="primary">Choisir une sauvegarde XML</button>
-      <p class="hint">Les pièces jointes MMS sont affichées si elles sont présentes dans l'export.</p>
+      <h2>Retrouvez vos anciennes conversations</h2>
+      <p>Importez un export XML de <strong>SMS Backup &amp; Restore</strong>. Les données restent <strong>100% locales</strong> sur cet appareil.</p>
+      <button id="welcomeImport" class="primary">
+        <span class="btn-icon">📁</span> Choisir une sauvegarde XML
+      </button>
+      <p class="hint">Les pièces jointes MMS s'affichent automatiquement si présentes dans l'export.</p>
     </section>
+    
+    <!-- Loader -->
+    <div id="loader" class="loader" hidden>
+      <div class="loader-content">
+        <div class="spinner"></div>
+        <p id="loaderText">Importation en cours...</p>
+      </div>
+    </div>
     
     <section id="workspace" hidden>
       <aside class="sidebar">
-        <div class="search-wrap"><input id="search" type="search" placeholder="Rechercher un contact ou un message…"></div>
+        <div class="search-wrap"><input id="search" type="search" placeholder="Rechercher un contact ou un message…" autofocus></div>
         <div class="list-heading"><span>CONVERSATIONS</span><span id="chatCount">0</span></div>
         <div id="chatList" class="chat-list"></div>
         <div class="storage-actions">
-          <button id="exportBtn" class="secondary">Exporter les données</button>
-          <button id="clearBtn" class="danger">Effacer cette archive</button>
+          <button id="exportBtn" class="secondary">
+            <span class="btn-icon">💾</span> Exporter
+          </button>
+          <button id="clearBtn" class="danger">
+            <span class="btn-icon">🗑️</span> Effacer
+          </button>
         </div>
       </aside>
       <section class="conversation">
-        <div id="emptyChat" class="empty-chat"><div class="bubble-icon">☏</div><h2>Choisis une conversation</h2><p>Les messages apparaîtront ici.</p></div>
+        <div id="emptyChat" class="empty-chat">
+          <div class="bubble-icon">☏</div>
+          <h2>Choisissez une conversation</h2>
+          <p>Les messages apparaîtront ici.</p>
+        </div>
         <div id="chatView" hidden>
-          <div class="chat-header"><button id="backBtn" class="back">‹</button><div><h2 id="chatTitle"></h2><p id="chatSubtitle"></p></div></div>
+          <div class="chat-header">
+            <button id="backBtn" class="back">‹</button>
+            <div>
+              <h2 id="chatTitle"></h2>
+              <p id="chatSubtitle"></p>
+            </div>
+          </div>
           <div id="messages" class="messages"></div>
         </div>
       </section>
     </section>
   </main>
   
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-content">
+      <span>Archives SMS - Lecteur XML de SMS Backup & Restore</span>
+      <div class="footer-links">
+        <a href="#" id="privacyLink">Confidentialité</a>
+        <span class="separator">|</span>
+        <a href="https://github.com/Clement1211/archive-sms" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </footer>
+  
+  <!-- Privacy Modal -->
+  <div id="privacyModal" class="modal" hidden>
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2>Confidentialité</h2>
+        <button id="closePrivacy" class="close-btn">×</button>
+      </div>
+      <div class="modal-body">
+        <p><strong>100% Local :</strong> Aucune donnée ne quitte votre navigateur.</p>
+        <p><strong>Stockage :</strong> Vos SMS sont sauvegardés dans IndexedDB, uniquement sur cet appareil.</p>
+        <p><strong>Sécurité :</strong> Les fichiers XML/JSON ne sont jamais envoyés vers un serveur.</p>
+        <p><strong>Suppression :</strong> Utilisez le bouton "Effacer" pour supprimer toutes les données.</p>
+      </div>
+    </div>
+  </div>
+  
   <!-- Modal Aide -->
   <div id="helpModal" class="modal" hidden>
     <div class="modal-content">
       <div class="modal-header">
-        <h2>Comment exporter vos SMS depuis Android ?</h2>
+        <h2>📱 Comment exporter vos SMS depuis Android ?</h2>
         <button id="closeHelp" class="close-btn">×</button>
       </div>
       <div class="modal-body">
-        <h3>📱 Avec SMS Backup & Restore</h3>
-        <ol>
-          <li><strong>Installez l'application</strong> : <a href="https://play.google.com/store/apps/details?id=com.riteshsahu.SMSBackupRestore" target="_blank">SMS Backup & Restore</a> depuis le Play Store</li>
-          <li><strong>Ouvrez l'application</strong> et autorisez les permissions nécessaires</li>
-          <li><strong>Créez une sauvegarde</strong> :
-            <ul>
-              <li>Cliquez sur "Sauvegarder" ou "Backup"</li>
-              <li>Choisissez le format <strong>XML</strong> (pas JSON)</li>
-              <li>Sélectionnez les conversations à exporter (ou "Tout")</li>
-              <li>Lancez la sauvegarde</li>
-            </ul>
-          </li>
-          <li><strong>Trouvez votre fichier</strong> :
-            <p>Le fichier XML est généralement sauvegardé dans : <code>/SMS Backup Restore/</code> sur votre stockage interne ou SD card</p>
-          </li>
-          <li><strong>Transférez le fichier</strong> :
-            <ul>
-              <li>Par email</li>
-              <li>Via Google Drive / Dropbox</li>
-              <li>Par câble USB</li>
-              <li>Par Bluetooth</li>
-            </ul>
-          </li>
-          <li><strong>Importez ici</strong> : Cliquez sur "Importer XML" et sélectionnez votre fichier</li>
-        </ol>
+        <div class="tutorial-step">
+          <h3>➊ Installez SMS Backup & Restore</h3>
+          <p>Téléchargez l'application depuis le Play Store :</p>
+          <p><a href="https://play.google.com/store/apps/details?id=com.riteshsahu.SMSBackupRestore" target="_blank" class="app-link">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" alt="Disponible sur Google Play" style="height: 40px;">
+          </a></p>
+        </div>
         
-        <div class="tutorial-tip">
-          <strong>💡 Astuce :</strong> Pour une utilisation régulière, installez cette application sur votre écran d'accueil (bouton "Installer l'app" ci-dessus).
+        <div class="tutorial-step">
+          <h3>➋ Créez une sauvegarde XML</h3>
+          <ol>
+            <li>Ouvrez l'application</li>
+            <li>Autorisez les permissions de lecture des SMS</li>
+            <li>Cliquez sur <strong>"Sauvegarder"</strong> ou <strong>"Backup"</strong></li>
+            <li>Choisissez le format <strong>XML</strong> (pas JSON)</li>
+            <li>Sélectionnez les conversations à exporter (ou "Tout")</li>
+            <li>Lancez la sauvegarde</li>
+          </ol>
+        </div>
+        
+        <div class="tutorial-step">
+          <h3>➌ Trouvez votre fichier XML</h3>
+          <p>Le fichier est généralement sauvegardé dans : <code>/SMS Backup Restore/</code> sur votre stockage interne.</p>
+          <p>Nommez-le par exemple : <code>sms-backup-2024.xml</code></p>
+        </div>
+        
+        <div class="tutorial-step">
+          <h3>⍟ Transférez le fichier vers cet appareil</h3>
+          <p>Plusieurs méthodes possibles :</p>
+          <ul>
+            <li>✉️ Par email</li>
+            <li>📁 Via Google Drive / Dropbox</li>
+            <li>🔌 Par câble USB</li>
+            <li>📶 Par Bluetooth</li>
+          </ul>
+        </div>
+        
+        <div class="tutorial-step">
+          <h3>➎ Importez le fichier ici</h3>
+          <p>Cliquez sur le bouton <strong>"Importer XML"</strong> ci-dessus et sélectionnez votre fichier.</p>
+          <p>⚡ <strong>Astuce :</strong> Installez cette application sur votre écran d'accueil pour un accès rapide !</p>
         </div>
         
         <div class="tutorial-warning">
-          <strong>⚠️ Important :</strong> vos SMS restent <strong>100% locaux</strong>. Aucune donnée n'est envoyée vers un serveur.
+          <strong>⚠️ Important :</strong> vos SMS restent <strong>100% locaux</strong>. Aucune donnée n'est envoyée vers un serveur ou partagée avec qui que ce soit.
         </div>
       </div>
     </div>
+  </div>
+  
+  <!-- Carbon Ads placeholder -->
+  <div id="carbonAds" class="carbon-ads" hidden>
+    <!-- Carbon Ads will be inserted here -->
   </div>
   
   <div id="status" class="status" role="status"></div>
