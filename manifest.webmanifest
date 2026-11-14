@@ -1,0 +1,9 @@
+{
+  "name": "Archives SMS",
+  "short_name": "Archives SMS",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f6fa",
+  "theme_color": "#101827",
+  "icons": []
+}

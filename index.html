@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#101827">
+  <title>Archives SMS</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div><div class="eyebrow">ARCHIVES LOCALES</div><h1>Messages</h1></div>
+    <button id="importBtn" class="primary">＋ Importer XML</button>
+    <input id="fileInput" type="file" accept=".xml,text/xml,application/xml" hidden>
+  </header>
+  <main>
+    <section id="welcome" class="welcome">
+      <div class="bubble-icon">✉</div>
+      <h2>Retrouve tes anciennes conversations</h2>
+      <p>Importe un export XML de SMS Backup &amp; Restore. Les données sont conservées dans le stockage de ce navigateur, sur cet appareil.</p>
+      <button id="welcomeImport" class="primary">Choisir une sauvegarde XML</button>
+      <p class="hint">Les pièces jointes MMS sont affichées si elles sont présentes dans l’export.</p>
+    </section>
+    <section id="workspace" hidden>
+      <aside class="sidebar">
+        <div class="search-wrap"><input id="search" type="search" placeholder="Rechercher un contact ou un message…"></div>
+        <div class="list-heading"><span>CONVERSATIONS</span><span id="chatCount">0</span></div>
+        <div id="chatList" class="chat-list"></div>
+        <div class="storage-actions">
+          <button id="exportBtn" class="secondary">Exporter les données</button>
+          <button id="clearBtn" class="danger">Effacer cette archive</button>
+        </div>
+      </aside>
+      <section class="conversation">
+        <div id="emptyChat" class="empty-chat"><div class="bubble-icon">☏</div><h2>Choisis une conversation</h2><p>Les messages apparaîtront ici.</p></div>
+        <div id="chatView" hidden>
+          <div class="chat-header"><button id="backBtn" class="back">‹</button><div><h2 id="chatTitle"></h2><p id="chatSubtitle"></p></div></div>
+          <div id="messages" class="messages"></div>
+        </div>
+      </section>
+    </section>
+  </main>
+  <div id="status" class="status" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>
