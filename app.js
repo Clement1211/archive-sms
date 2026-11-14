@@ -20,8 +20,6 @@ const DB_VERSION = 2;
 const STORE_MESSAGES = "messages";
 const STORE_ATTACHMENTS = "attachments";
 const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
-const BATCH_SIZE = 500;
-const BATCH_SIZE_BYTES = 16 * 1024 * 1024; // 16MB cumulative size limit
 
 // ============================================
 // STATE
@@ -213,11 +211,10 @@ function parseMmsElement(xmlString) {
       address = addrs[0];
     }
 
-    // Generate attachment IDs upfront
-    const attachmentIds = [];
-    for (let i = 0; i < rawAttachments.length; i++) {
-      attachmentIds.push(`att-${Date.now()}-${i}`);
-    }
+    // Include randomness because several MMS can be parsed in the same millisecond.
+    const attachmentIds = rawAttachments.map(() =>
+      `att-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+    );
 
     return {
       message: {
@@ -352,125 +349,77 @@ async function* parseXmlStreaming(file, signal, onProgress) {
 // ============================================
 
 async function importFile(file) {
-  if (!file || !db) return;
+  if (!file || !db || importController) return;
 
-  const abortController = { signal: { aborted: false } };
+  const abortController = new AbortController();
   importController = abortController;
 
   showLoader();
   updateProgress(0, file.size);
 
   try {
-    let totalMessages = 0;
     const messagesToSave = [];
-    const attachmentsToSave = [];
-    const currentMessagesBatch = [];
-    const currentAttachmentsBatch = [];
-    let currentBatchSize = 0; // Cumulative size in bytes
-
-    selected = null;
-    await clearAllData();
+    const importedAttachments = [];
 
     const stream = parseXmlStreaming(file, abortController.signal, (br, total) => {
       updateProgress(br, total);
     });
 
     for await (const item of stream) {
-      if (abortController.signal.aborted) {
-        throw new Error("Import annulé");
-      }
+      if (abortController.signal.aborted) throw new DOMException("Import annulé", "AbortError");
 
-      let itemSize = 0;
+      const message = item.address ? item : item.message;
+      const attachments = item.attachments || [];
+      if (!message) continue;
 
-      // Handle SMS
-      if (item.address) {
-        messagesToSave.push(item);
-        currentMessagesBatch.push(item);
-        // Estimate SMS size (body + address + metadata)
-        itemSize = (item.body?.length || 0) * 2 + (item.address?.length || 0) * 2 + 200;
-        totalMessages++;
-      }
-      // Handle MMS (item has message + attachments)
-      else if (item.message) {
-        messagesToSave.push(item.message);
-        currentMessagesBatch.push(item.message);
-        attachmentsToSave.push(...item.attachments);
-        currentAttachmentsBatch.push(...item.attachments);
-        // Estimate MMS message size
-        itemSize = (item.message.body?.length || 0) * 2 + (item.message.address?.length || 0) * 2 + 200;
-        // Add attachment sizes
-        for (const att of item.attachments) {
-          itemSize += att.blob?.size || 0;
-        }
-        totalMessages++;
-      }
-
-      currentBatchSize += itemSize;
-
-      // Flush batches if they reach count OR size limit
-      if (currentMessagesBatch.length >= BATCH_SIZE || currentBatchSize >= BATCH_SIZE_BYTES) {
-        await saveBatch(currentMessagesBatch, currentAttachmentsBatch);
-        currentMessagesBatch.length = 0;
-        currentAttachmentsBatch.length = 0;
-        currentBatchSize = 0;
-      }
+      messagesToSave.push(message);
+      importedAttachments.push(...attachments);
     }
 
-    // Flush remaining
-    if (currentMessagesBatch.length > 0) {
-      await saveBatch(currentMessagesBatch, currentAttachmentsBatch);
-    }
+    if (abortController.signal.aborted) throw new DOMException("Import annulé", "AbortError");
+    if (messagesToSave.length === 0) throw new Error("Aucun message valide trouvé dans ce fichier XML");
 
-    // Load all messages for rendering
+    // Replace the current archive in one transaction only after the file was fully parsed.
+    await replaceAllData(messagesToSave, importedAttachments);
     allMessages = messagesToSave.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0));
     chats = groupMessages(allMessages);
 
-    // Request persistent storage
     if ("storage" in navigator && "persist" in navigator.storage) {
-      try {
-        await navigator.storage.persist();
-      } catch (e) {
-        console.warn("Storage persist failed:", e);
-      }
+      try { await navigator.storage.persist(); }
+      catch (e) { console.warn("Storage persist failed:", e); }
     }
 
     hideLoader();
     render();
-    toast(`${totalMessages} messages importés`);
-
+    toast(`${messagesToSave.length} messages importés`);
   } catch (error) {
     hideLoader();
-    if (error.message === "Import annulé") {
+    if (error.name === "AbortError") {
       toast("Import annulé");
     } else {
       console.error("Import error:", error);
       toast(`Erreur: ${error.message}`);
     }
   } finally {
-    importController = null;
+    if (importController === abortController) importController = null;
   }
 }
 
-// Save a batch of messages and attachments in a single transaction
-function saveBatch(messages, attachments) {
-  return dbTx([STORE_MESSAGES, STORE_ATTACHMENTS], "readwrite", (tx) => {
-    const msgStore = tx.objectStore(STORE_MESSAGES);
-    const attStore = tx.objectStore(STORE_ATTACHMENTS);
-
-    for (const msg of messages) {
-      msgStore.put(msg);
-    }
-
-    for (const att of attachments) {
-      attStore.put({
-        id: att.id,
-        blob: att.blob,
-        type: att.type,
-        name: att.name
-      });
-    }
+async function replaceAllData(messages, attachments) {
+  const tx = db.transaction([STORE_MESSAGES, STORE_ATTACHMENTS], "readwrite");
+  const messageStore = tx.objectStore(STORE_MESSAGES);
+  const attachmentStore = tx.objectStore(STORE_ATTACHMENTS);
+  messageStore.clear();
+  attachmentStore.clear();
+  for (const message of messages) messageStore.put(message);
+  for (const attachment of attachments) attachmentStore.put({ id: attachment.id, blob: attachment.blob, type: attachment.type, name: attachment.name });
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error("Remplacement de l'archive annulé"));
   });
 }
+
 
 async function clearAllData() {
   await Promise.all([
@@ -773,18 +722,25 @@ function setupEventListeners() {
 
   if (exportBtn) exportBtn.onclick = async () => {
     const messages = await loadAllMessagesFromDB();
-    const data = JSON.stringify({
-      messages: messages.map(m => ({
-        id: m.id,
-        address: m.address,
-        body: m.body,
-        date: m.date?.toISOString(),
-        kind: m.kind,
-        out: m.out,
-        attachments: m.attachments
-      })),
-      exportedAt: new Date().toISOString()
-    }, null, 2);
+    const exportedMessages = await Promise.all(messages.map(async message => ({
+      id: message.id,
+      address: message.address,
+      body: message.body,
+      date: message.date?.toISOString(),
+      kind: message.kind,
+      out: message.out,
+      attachments: await Promise.all((message.attachments || []).map(async id => {
+        const attachment = await dbGet(STORE_ATTACHMENTS, id);
+        if (!attachment?.blob) return null;
+        const bytes = new Uint8Array(await attachment.blob.arrayBuffer());
+        let binary = "";
+        for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+          binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+        }
+        return { name: attachment.name, type: attachment.type, data: `data:${attachment.type};base64,${btoa(binary)}` };
+      }))
+    })));
+    const data = JSON.stringify({ messages: exportedMessages, exportedAt: new Date().toISOString() }, null, 2);
 
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
@@ -804,8 +760,7 @@ function setupEventListeners() {
 
   if (cancelBtn) cancelBtn.onclick = () => {
     if (importController) {
-      importController.signal.aborted = true;
-      importController = null;
+      importController.abort();
       hideLoader();
       toast("Import annulé");
     }

@@ -3,7 +3,7 @@
  * Reliable updates with network-first strategy for critical files
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CRITICAL_FILES = [
   './',
   './index.html',
