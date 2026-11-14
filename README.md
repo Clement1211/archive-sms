@@ -32,6 +32,33 @@ Rendez-vous sur : [https://clement1211.github.io/archive-sms](https://clement121
 
 3. Ouvrez votre navigateur à l'adresse : [http://localhost:8000](http://localhost:8000)
 
+## 📱 Utilisation sur iPhone
+
+### Import depuis l'app Fichiers
+
+1. **Transférez votre fichier XML** sur votre iPhone (par AirDrop, iCloud Drive, email, etc.)
+2. **Ouvrez l'app Fichiers** sur votre iPhone
+3. **Trouvez votre fichier XML** (dans iCloud Drive, Mes fichiers, ou une autre source)
+4. **Appuyez et maintenez** sur le fichier, puis sélectionnez **"Partager"**
+5. **Choisissez "Plus d'options..."** si nécessaire, puis **"Copier dans Archives SMS"** ou **"Ouvrir dans Safari"**
+6. **Collez le fichier** dans la zone de dépôt ou utilisez le bouton "Importer XML"
+
+### Installation sur l'écran d'accueil
+
+1. Ouvrez Safari et rendez-vous sur [https://clement1211.github.io/archive-sms](https://clement1211.github.io/archive-sms)
+2. Appuyez sur l'icône **Partager** (carré avec flèche vers le haut)
+3. Faites défiler vers le bas et sélectionnez **"Sur l'écran d'accueil"**
+4. Donnez un nom à l'application (ex: "Archives SMS")
+5. Appuyez sur **Ajouter**
+
+### ⚠️ Limites connues sur iOS
+
+- **Stockage limité** : Safari iOS impose une limite de stockage (généralement ~500 Mo - 1 Go) pour les IndexedDB. Les fichiers XML de 230 Mo peuvent atteindre cette limite.
+- **Conservation des données** : Le stockage peut être effacé si l'espace est insuffisant ou si vous supprimez l'application du cache.
+- **Fichiers volumineux** : L'import de très grands fichiers peut prendre du temps et consommer beaucoup de mémoire.
+
+**Recommandation** : Gardez toujours une copie de votre fichier XML d'origine comme sauvegarde principale.
+
 ## 📱 Comment exporter vos SMS depuis Android
 
 1. **Installez SMS Backup & Restore** depuis le [Google Play Store](https://play.google.com/store/apps/details?id=com.riteshsahu.SMSBackupRestore)

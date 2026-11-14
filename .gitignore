@@ -30,7 +30,12 @@ Thumbs.db
 npm-debug.log*
 
 # Data files - NEVER commit user data
+data/
+tests/private/
+
+# XML files - except test fixtures
 *.xml
+!tests/fixtures/*.xml
 
 # Testing
 coverage/
