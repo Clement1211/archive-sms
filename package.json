@@ -7,7 +7,15 @@
   "scripts": {
     "test": "node --test tests/*.test.js"
   },
-  "keywords": ["sms", "backup", "xml", "pwa"],
+  "keywords": [
+    "sms",
+    "backup",
+    "xml",
+    "pwa"
+  ],
   "author": "Clement1211",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.8"
+  }
 }

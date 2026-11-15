@@ -1,3 +1,5 @@
+import { extract, parseSmsElement, parseMmsElement } from "./parser.js";
+
 /**
  * Archives SMS - Web App for reading SMS Backup & Restore XML files
  * 
@@ -41,7 +43,7 @@ let activeObjectUrls = new Set();
 // DOM HELPERS
 // ============================================
 
-const $ = id => document.getElementById(id);
+const $ = id => typeof document === "undefined" ? null : document.getElementById(id);
 
 function toast(message, duration = 2600) {
   const el = $("status");
@@ -106,11 +108,13 @@ function dbOpen() {
   });
 }
 
+export function setDatabaseForTesting(database) { db = database; }
+
 function dbTx(storeNames, mode, callback) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeNames, mode);
     tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error || new Error("Transaction annulée"));
     tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
     callback(tx);
   });
@@ -122,7 +126,7 @@ function dbGet(store, key) {
     const req = tx.objectStore(store).get(key);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error || new Error("Transaction annulée"));
     tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
   });
 }
@@ -132,175 +136,10 @@ function dbClear(store) {
 }
 
 // ============================================
-// XML PARSING - Streaming, memory-efficient
-// ============================================
-
-function parseDateString(s) {
-  if (!s) return null;
-  let n = Number(s);
-  if (!Number.isFinite(n)) return null;
-  if (n < 1e12) n *= 1000; // milliseconds
-  const d = new Date(n);
-  return isNaN(d) ? null : d;
-}
-
-function parseSmsElement(xmlString) {
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xmlString, "application/xml");
-    const parserError = doc.querySelector("parsererror");
-    if (parserError) return null;
-
-    const el = doc.documentElement;
-    if (el.tagName.toLowerCase() !== "sms") return null;
-
-    const type = el.getAttribute("type");
-    const address = (el.getAttribute("address") || "Inconnu").trim().replace(/\s+/g, " ");
-    const date = parseDateString(el.getAttribute("date"));
-    const body = el.getAttribute("body") || "";
-    const isOutgoing = type === "2";
-
-    return {
-      id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      address,
-      body,
-      date,
-      kind: "sms",
-      out: isOutgoing,
-      attachments: []
-    };
-  } catch (e) {
-    console.warn("SMS parse error:", e);
-    return null;
-  }
-}
-
-function parseMmsElement(xmlString) {
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xmlString, "application/xml");
-    const parserError = doc.querySelector("parsererror");
-    if (parserError) return null;
-
-    const el = doc.documentElement;
-    if (el.tagName.toLowerCase() !== "mms") return null;
-
-    const type = el.getAttribute("type");
-    let address = (el.getAttribute("address") || "Inconnu").trim().replace(/\s+/g, " ");
-    const date = parseDateString(el.getAttribute("date"));
-    const isOutgoing = type === "2";
-
-    let body = "";
-    const rawAttachments = []; // { blob, type, name }
-
-    const parts = el.getElementsByTagName("part");
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const ct = part.getAttribute("ct") || "";
-      const text = part.getAttribute("text");
-      const data = part.getAttribute("data");
-      const cl = part.getAttribute("cl") || `piece-jointe-${i + 1}`;
-
-      if (ct.startsWith("text/") && text) {
-        body += (body ? "\n" : "") + text;
-      } else if (data) {
-        try {
-          const cleanData = data.replace(/\s/g, "");
-          const raw = atob(cleanData);
-          const bytes = new Uint8Array(new ArrayBuffer(raw.length));
-          for (let j = 0; j < raw.length; j++) {
-            bytes[j] = raw.charCodeAt(j);
-          }
-          const blob = new Blob([bytes], { type: ct || "application/octet-stream" });
-          rawAttachments.push({ blob, type: ct || "application/octet-stream", name: cl });
-        } catch (e) {
-          console.warn("Failed to decode MMS attachment:", e);
-        }
-      }
-    }
-
-    const addrs = Array.from(el.getElementsByTagName("addr"))
-      .map(a => a.getAttribute("address"))
-      .filter(Boolean);
-    if (address === "Inconnu" && addrs.length > 0) {
-      address = addrs[0];
-    }
-
-    // Include randomness because several MMS can be parsed in the same millisecond.
-    const attachmentIds = rawAttachments.map(() =>
-      `att-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
-    );
-
-    return {
-      message: {
-        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        address,
-        body: body || (rawAttachments.length ? "Média" : ""),
-        date,
-        kind: "mms",
-        out: isOutgoing,
-        attachments: attachmentIds
-      },
-      attachments: rawAttachments.map((att, idx) => ({
-        id: attachmentIds[idx],
-        blob: att.blob,
-        type: att.type,
-        name: att.name
-      }))
-    };
-  } catch (e) {
-    console.warn("MMS parse error:", e);
-    return null;
-  }
-}
-
-// ============================================
-// XML EXTRACTOR - Reference implementation (validated on 149 Mo file)
-// ============================================
-
-const START = /<(sms|mms)(?=[\s\/>])/g;
-const ATTR = /\s+[^\s=\/>]+\s*=\s*(?:"[^"]*"|'[^']*')/y;
-
-// Returns null if opening tag is incomplete in buffer
-function openTag(s, i) {
-  let p = i;
-  for (;;) { 
-    ATTR.lastIndex = p; 
-    if (!ATTR.exec(s)) break; 
-    p = ATTR.lastIndex; 
-  }
-  while (p < s.length && /\s/.test(s[p])) p++;
-  if (s[p] === '>') return { end: p, self: false };
-  if (s[p] === '/' && s[p + 1] === '>') return { end: p + 1, self: true };
-  return null;
-}
-
-// Extract complete <sms> and <mms> elements from buffer
-function extract(s) {
-  const out = []; 
-  let cur = 0;
-  for (;;) {
-    START.lastIndex = cur; 
-    const m = START.exec(s);
-    if (!m) return { complete: out, remaining: s.slice(Math.max(cur, s.length - 16)) };
-    const st = m.index, 
-          ot = openTag(s, st + 1 + m[1].length);
-    if (!ot) return { complete: out, remaining: s.slice(st) };
-    if (ot.self) { 
-      out.push(s.slice(st, ot.end + 1)); 
-      cur = ot.end + 1; 
-      continue; 
-    }
-    const close = '</' + m[1] + '>', 
-          cp = s.indexOf(close, ot.end + 1);
-    if (cp === -1) return { complete: out, remaining: s.slice(st) };
-    out.push(s.slice(st, cp + close.length)); 
-    cur = cp + close.length;
-  }
-}
-
-// ============================================
 // STREAMING XML PARSER
+// ============================================
+
+
 // ============================================
 
 async function* parseXmlStreaming(file, signal, onProgress) {
@@ -363,10 +202,10 @@ async function* parseXmlStreaming(file, signal, onProgress) {
 // IMPORT
 // ============================================
 
-async function importFile(file) {
+export async function importFile(file, { controller = new AbortController(), onProgress = updateProgress } = {}) {
   if (!file || !db || importController) return;
 
-  const abortController = new AbortController();
+  const abortController = controller;
   importController = abortController;
 
   showLoader();
@@ -380,7 +219,7 @@ async function importFile(file) {
     let totalMessages = 0;
 
     const stream = parseXmlStreaming(file, abortController.signal, (br, total) => {
-      updateProgress(br, total);
+      onProgress(br, total);
     });
 
     for await (const item of stream) {
@@ -412,35 +251,37 @@ async function importFile(file) {
     await replaceAllDataFromStaging();
     selected = null;
     cleanupObjectUrls();
-    $("messages").replaceChildren();
-    $("chatView").hidden = true;
-    $("emptyChat").hidden = false;
+    if (typeof document !== "undefined") {
+      $("messages").replaceChildren();
+      $("chatView").hidden = true;
+      $("emptyChat").hidden = false;
+    }
     allMessages = await loadAllMessagesFromDB();
     chats = groupMessages(allMessages);
 
-    if ("storage" in navigator && "persist" in navigator.storage) {
+    if (typeof navigator !== "undefined" && "storage" in navigator && "persist" in navigator.storage) {
       try { await navigator.storage.persist(); }
       catch (e) { console.warn("Storage persist failed:", e); }
     }
 
     hideLoader();
-    render();
+    if (typeof document !== "undefined") render();
     toast(`${totalMessages} messages importés`);
   } catch (error) {
     try { await clearImportStaging(); }
     catch (cleanupError) { console.warn("Staging cleanup failed:", cleanupError); }
     hideLoader();
-    if (error.name === "AbortError") {
+    if (error?.name === "AbortError") {
       toast("Import annulé");
-    } else if (error.name === "QuotaExceededError") {
+    } else if (error?.name === "QuotaExceededError") {
       toast("Espace de stockage insuffisant sur cet appareil");
     } else {
       console.error("Import error:", error);
-      toast(`Erreur: ${error.message}`);
+      toast(`Erreur: ${error?.message || "Transaction annulée"}`);
     }
   } finally {
     if (importController === abortController) importController = null;
-    if (pendingReload) {
+    if (pendingReload && typeof window !== "undefined") {
       pendingReload = false;
       window.location.reload();
     }
@@ -487,7 +328,7 @@ function replaceAllDataFromStaging() {
   migrate(STORE_STAGING_ATTACHMENTS, STORE_ATTACHMENTS);
   return new Promise((resolve, reject) => {
     tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error || new Error("Transaction annulée"));
     tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
   });
 }
@@ -517,7 +358,7 @@ async function loadAllMessagesFromDB() {
       resolve(messages.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0)));
     };
     req.onerror = () => reject(req.error);
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error || new Error("Transaction annulée"));
     tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
   });
 }
@@ -538,7 +379,7 @@ async function loadAttachment(attachmentId) {
       }
     };
     req.onerror = () => reject(req.error);
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error || new Error("Transaction annulée"));
     tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
   });
 }
@@ -902,7 +743,7 @@ function setupEventListeners() {
 // INITIALIZATION
 // ============================================
 
-(async () => {
+if (typeof document !== "undefined") (async () => {
   try {
     db = await dbOpen();
     allMessages = await loadAllMessagesFromDB();
