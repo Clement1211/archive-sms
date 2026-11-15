@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "PWA for reading SMS Backup & Restore XML files",
-  "main": "app.js",
+  "main": "src/app.js",
   "scripts": {
     "test": "node --test tests/*.test.js"
   },

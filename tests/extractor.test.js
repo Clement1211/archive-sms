@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { strictEqual, ok } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { extract } from '../parser.js';
+import { extract } from '../src/parser.js';
 
 test('extract recognizes SMS and MMS while ignoring XML wrappers', () => {
   const xml = '<?xml version="1.0"?><smses><sms address="+1" body="Hi"/><mms address="+2"><part text="Hello"/></mms></smses>';

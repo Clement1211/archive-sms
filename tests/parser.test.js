@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strictEqual, ok } from 'node:assert';
-import { parseDateString, parseSmsElement, parseMmsElement } from '../parser.js';
+import { parseDateString, parseSmsElement, parseMmsElement } from '../src/parser.js';
 import { installDOMParserMock } from './helpers/dom-parser.js';
 
 installDOMParserMock();

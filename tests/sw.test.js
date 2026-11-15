@@ -10,9 +10,9 @@ import { strictEqual } from 'node:assert';
 const CRITICAL_FILES = [
   './',
   './index.html',
-  './app.js',
-  './parser.js',
-  './styles.css',
+  './src/app.js',
+  './src/parser.js',
+  './styles/styles.css',
   './manifest.webmanifest'
 ];
 
@@ -59,18 +59,18 @@ test('isCriticalFile - /index.html is critical', () => {
   strictEqual(result, true);
 });
 
-test('isCriticalFile - /app.js is critical', () => {
-  const result = isCriticalFile('https://clement1211.github.io/archive-sms/app.js', SCOPE);
+test('isCriticalFile - /src/app.js is critical', () => {
+  const result = isCriticalFile('https://clement1211.github.io/archive-sms/src/app.js', SCOPE);
   strictEqual(result, true);
 });
 
-test('isCriticalFile - /parser.js is critical', () => {
-  const result = isCriticalFile('https://clement1211.github.io/archive-sms/parser.js', SCOPE);
+test('isCriticalFile - /src/parser.js is critical', () => {
+  const result = isCriticalFile('https://clement1211.github.io/archive-sms/src/parser.js', SCOPE);
   strictEqual(result, true);
 });
 
-test('isCriticalFile - /styles.css is critical', () => {
-  const result = isCriticalFile('https://clement1211.github.io/archive-sms/styles.css', SCOPE);
+test('isCriticalFile - /styles/styles.css is critical', () => {
+  const result = isCriticalFile('https://clement1211.github.io/archive-sms/styles/styles.css', SCOPE);
   strictEqual(result, true);
 });
 

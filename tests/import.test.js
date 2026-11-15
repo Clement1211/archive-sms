@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { strictEqual, ok } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { indexedDB } from 'fake-indexeddb';
-import { importFile, setDatabaseForTesting } from '../app.js';
+import { importFile, setDatabaseForTesting } from '../src/app.js';
 import { installDOMParserMock } from './helpers/dom-parser.js';
 
 const fixture = readFileSync(new URL('./fixtures/sample.xml', import.meta.url), 'utf8');

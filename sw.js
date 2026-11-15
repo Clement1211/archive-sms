@@ -3,13 +3,13 @@
  * Reliable updates with network-first strategy for critical files
  */
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const CRITICAL_FILES = [
   './',
   './index.html',
-  './app.js',
-  './parser.js',
-  './styles.css',
+  './src/app.js',
+  './src/parser.js',
+  './styles/styles.css',
   './manifest.webmanifest'
 ];
 const STATIC_FILES = [
