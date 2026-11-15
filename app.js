@@ -108,17 +108,21 @@ function dbOpen() {
 function dbTx(storeNames, mode, callback) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeNames, mode);
-    callback(tx);
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
+    callback(tx);
   });
 }
 
 function dbGet(store, key) {
   return new Promise((resolve, reject) => {
-    const req = db.transaction(store, "readonly").objectStore(store).get(key);
+    const tx = db.transaction(store, "readonly");
+    const req = tx.objectStore(store).get(key);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
   });
 }
 
@@ -427,6 +431,8 @@ async function importFile(file) {
     hideLoader();
     if (error.name === "AbortError") {
       toast("Import annulé");
+    } else if (error.name === "QuotaExceededError") {
+      toast("Espace de stockage insuffisant sur cet appareil");
     } else {
       console.error("Import error:", error);
       toast(`Erreur: ${error.message}`);
@@ -477,7 +483,7 @@ function replaceAllDataFromStaging() {
   return new Promise((resolve, reject) => {
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error || new Error("Remplacement de l'archive annulé"));
+    tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
   });
 }
 
@@ -497,7 +503,7 @@ async function clearAllData() {
 // ============================================
 
 async function loadAllMessagesFromDB() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_MESSAGES, "readonly");
     const store = tx.objectStore(STORE_MESSAGES);
     const req = store.getAll();
@@ -505,12 +511,14 @@ async function loadAllMessagesFromDB() {
       const messages = req.result || [];
       resolve(messages.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0)));
     };
-    req.onerror = () => resolve([]);
+    req.onerror = () => reject(req.error);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
   });
 }
 
 async function loadAttachment(attachmentId) {
-  return new Promise(async (resolve) => {
+  return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_ATTACHMENTS, "readonly");
     const store = tx.objectStore(STORE_ATTACHMENTS);
     const req = store.get(attachmentId);
@@ -524,7 +532,9 @@ async function loadAttachment(attachmentId) {
         resolve(null);
       }
     };
-    req.onerror = () => resolve(null);
+    req.onerror = () => reject(req.error);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
   });
 }
 
