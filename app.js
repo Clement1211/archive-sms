@@ -16,10 +16,14 @@
 // ============================================
 
 const DB_NAME = "archives-sms-db";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_MESSAGES = "messages";
 const STORE_ATTACHMENTS = "attachments";
-const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
+const STORE_STAGING_MESSAGES = "stagingMessages";
+const STORE_STAGING_ATTACHMENTS = "stagingAttachments";
+const CHUNK_SIZE = 1 * 1024 * 1024; // 1MB keeps Safari iOS peak memory lower
+const BATCH_SIZE = 300;
+const BATCH_SIZE_BYTES = 8 * 1024 * 1024;
 
 // ============================================
 // STATE
@@ -90,6 +94,12 @@ function dbOpen() {
       }
       if (!db.objectStoreNames.contains(STORE_ATTACHMENTS)) {
         db.createObjectStore(STORE_ATTACHMENTS, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(STORE_STAGING_MESSAGES)) {
+        db.createObjectStore(STORE_STAGING_MESSAGES, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(STORE_STAGING_ATTACHMENTS)) {
+        db.createObjectStore(STORE_STAGING_ATTACHMENTS, { keyPath: "id" });
       }
     };
   });
@@ -358,8 +368,11 @@ async function importFile(file) {
   updateProgress(0, file.size);
 
   try {
-    const messagesToSave = [];
-    const importedAttachments = [];
+    await clearImportStaging();
+    const messagesBatch = [];
+    const attachmentsBatch = [];
+    let batchBytes = 0;
+    let totalMessages = 0;
 
     const stream = parseXmlStreaming(file, abortController.signal, (br, total) => {
       updateProgress(br, total);
@@ -372,21 +385,32 @@ async function importFile(file) {
       const attachments = item.attachments || [];
       if (!message) continue;
 
-      messagesToSave.push(message);
-      importedAttachments.push(...attachments);
+      messagesBatch.push(message);
+      attachmentsBatch.push(...attachments);
+      batchBytes += (message.body?.length || 0) * 2 + (message.address?.length || 0) * 2 + 200;
+      for (const attachment of attachments) batchBytes += attachment.blob?.size || 0;
+      totalMessages++;
+
+      if (messagesBatch.length >= BATCH_SIZE || batchBytes >= BATCH_SIZE_BYTES) {
+        await saveImportBatch(messagesBatch, attachmentsBatch);
+        messagesBatch.length = 0;
+        attachmentsBatch.length = 0;
+        batchBytes = 0;
+      }
     }
 
     if (abortController.signal.aborted) throw new DOMException("Import annulé", "AbortError");
-    if (messagesToSave.length === 0) throw new Error("Aucun message valide trouvé dans ce fichier XML");
+    if (messagesBatch.length) await saveImportBatch(messagesBatch, attachmentsBatch);
+    if (totalMessages === 0) throw new Error("Aucun message valide trouvé dans ce fichier XML");
 
     // Replace the current archive in one transaction only after the file was fully parsed.
-    await replaceAllData(messagesToSave, importedAttachments);
+    await replaceAllDataFromStaging();
     selected = null;
     cleanupObjectUrls();
     $("messages").replaceChildren();
     $("chatView").hidden = true;
     $("emptyChat").hidden = false;
-    allMessages = messagesToSave.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0));
+    allMessages = await loadAllMessagesFromDB();
     chats = groupMessages(allMessages);
 
     if ("storage" in navigator && "persist" in navigator.storage) {
@@ -396,8 +420,10 @@ async function importFile(file) {
 
     hideLoader();
     render();
-    toast(`${messagesToSave.length} messages importés`);
+    toast(`${totalMessages} messages importés`);
   } catch (error) {
+    try { await clearImportStaging(); }
+    catch (cleanupError) { console.warn("Staging cleanup failed:", cleanupError); }
     hideLoader();
     if (error.name === "AbortError") {
       toast("Import annulé");
@@ -410,15 +436,45 @@ async function importFile(file) {
   }
 }
 
-async function replaceAllData(messages, attachments) {
-  const tx = db.transaction([STORE_MESSAGES, STORE_ATTACHMENTS], "readwrite");
-  const messageStore = tx.objectStore(STORE_MESSAGES);
-  const attachmentStore = tx.objectStore(STORE_ATTACHMENTS);
-  messageStore.clear();
-  attachmentStore.clear();
-  for (const message of messages) messageStore.put(message);
-  for (const attachment of attachments) attachmentStore.put({ id: attachment.id, blob: attachment.blob, type: attachment.type, name: attachment.name });
-  await new Promise((resolve, reject) => {
+function clearImportStaging() {
+  return dbTx([STORE_STAGING_MESSAGES, STORE_STAGING_ATTACHMENTS], "readwrite", tx => {
+    tx.objectStore(STORE_STAGING_MESSAGES).clear();
+    tx.objectStore(STORE_STAGING_ATTACHMENTS).clear();
+  });
+}
+
+function saveImportBatch(messages, attachments) {
+  return dbTx([STORE_STAGING_MESSAGES, STORE_STAGING_ATTACHMENTS], "readwrite", tx => {
+    const messageStore = tx.objectStore(STORE_STAGING_MESSAGES);
+    const attachmentStore = tx.objectStore(STORE_STAGING_ATTACHMENTS);
+    for (const message of messages) messageStore.put(message);
+    for (const attachment of attachments) {
+      attachmentStore.put({ id: attachment.id, blob: attachment.blob, type: attachment.type, name: attachment.name });
+    }
+  });
+}
+
+function replaceAllDataFromStaging() {
+  const storeNames = [STORE_MESSAGES, STORE_ATTACHMENTS, STORE_STAGING_MESSAGES, STORE_STAGING_ATTACHMENTS];
+  const tx = db.transaction(storeNames, "readwrite");
+  const migrate = (sourceName, targetName) => {
+    const source = tx.objectStore(sourceName);
+    const target = tx.objectStore(targetName);
+    const request = source.openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      target.put(cursor.value);
+      cursor.delete();
+      cursor.continue();
+    };
+  };
+
+  tx.objectStore(STORE_MESSAGES).clear();
+  tx.objectStore(STORE_ATTACHMENTS).clear();
+  migrate(STORE_STAGING_MESSAGES, STORE_MESSAGES);
+  migrate(STORE_STAGING_ATTACHMENTS, STORE_ATTACHMENTS);
+  return new Promise((resolve, reject) => {
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error || new Error("Remplacement de l'archive annulé"));
