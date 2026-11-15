@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#101827">
+  <meta name="theme-color" content="#f5f5f7">
   <meta name="description" content="Lisez vos archives de SMS exportées depuis SMS Backup & Restore. Application web locale, 100% gratuite et sans serveur.">
   <meta name="keywords" content="SMS, archive, backup, restore, XML, Android, export, import">
   <meta name="author" content="Clement1211">
@@ -37,17 +37,14 @@
     <button id="closeUpdateBtn" class="close-banner-btn">×</button>
   </div>
   <header class="topbar">
-    <div>
-      <div class="eyebrow">ARCHIVES LOCALES</div>
+    <div class="brand">
+      <div class="eyebrow">ARCHIVE LOCALE</div>
       <h1>Messages</h1>
     </div>
     <div class="header-actions">
-      <button id="installBtn" class="secondary" hidden>
-        <span class="btn-icon">📱</span> Installer
-      </button>
-      <button id="helpBtn" class="secondary">❓ Aide</button>
-      <button id="importBtn" class="primary">
-        <span class="btn-icon">＋</span> Importer XML
+      <button id="settingsBtn" class="settings-button" aria-label="Réglages" title="Réglages">⚙</button>
+      <button id="importBtn" class="header-action primary">
+        <span class="btn-icon">＋</span><span id="headerActionLabel">Importer</span>
       </button>
     </div>
     <input id="fileInput" type="file" accept=".xml,text/xml,application/xml" hidden>
@@ -69,7 +66,7 @@
   <main>
     <section id="welcome" class="welcome">
       <div class="bubble-icon">✉</div>
-      <h2>Retrouvez vos anciennes conversations</h2>
+      <h2>Vos messages, retrouvés.</h2>
       <p>Importez un export XML de <strong>SMS Backup &amp; Restore</strong>. Les données restent <strong>100% locales</strong> sur cet appareil.</p>
       <button id="welcomeImport" class="primary">
         <span class="btn-icon">📁</span> Choisir une sauvegarde XML
@@ -90,14 +87,6 @@
         <div class="search-wrap"><input id="search" type="search" placeholder="Rechercher un contact ou un message…" autofocus></div>
         <div class="list-heading"><span>CONVERSATIONS</span><span id="chatCount">0</span></div>
         <div id="chatList" class="chat-list"></div>
-        <div class="storage-actions">
-          <button id="exportBtn" class="secondary">
-            <span class="btn-icon">💾</span> Exporter
-          </button>
-          <button id="clearBtn" class="danger">
-            <span class="btn-icon">🗑️</span> Effacer
-          </button>
-        </div>
       </aside>
       <section class="conversation">
         <div id="emptyChat" class="empty-chat">
@@ -124,7 +113,7 @@
     <div class="footer-content">
       <span>Archives SMS - Lecteur XML de SMS Backup & Restore</span>
       <div class="footer-links">
-        <a href="#" id="privacyLink">Confidentialité</a>
+        <a href="#" id="privacyFooterLink">Confidentialité</a>
         <span class="separator">|</span>
         <a href="https://github.com/Clement1211/archive-sms" target="_blank">GitHub</a>
       </div>
@@ -143,6 +132,34 @@
         <p><strong>Stockage :</strong> Vos SMS sont sauvegardés dans IndexedDB, uniquement sur cet appareil.</p>
         <p><strong>Sécurité :</strong> Les fichiers XML/JSON ne sont jamais envoyés vers un serveur.</p>
         <p><strong>Suppression :</strong> Utilisez le bouton "Effacer" pour supprimer toutes les données.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="settingsModal" class="modal settings-modal" hidden>
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2>Réglages</h2>
+        <button id="closeSettings" class="close-btn" aria-label="Fermer">×</button>
+      </div>
+      <div class="modal-body settings-body">
+        <section class="settings-group" aria-labelledby="settingsArchiveTitle">
+          <h3 id="settingsArchiveTitle">Votre archive</h3>
+          <button id="exportBtn" class="settings-row"><span class="settings-icon">⇧</span><span>Exporter une copie</span><span class="settings-chevron">›</span></button>
+          <button id="settingsImportBtn" class="settings-row"><span class="settings-icon">＋</span><span>Importer ou remplacer l’archive</span><span class="settings-chevron">›</span></button>
+        </section>
+        <section class="settings-group" aria-labelledby="settingsInstallTitle">
+          <h3 id="settingsInstallTitle">Application</h3>
+          <button id="installBtn" class="settings-row"><span class="settings-icon">↓</span><span>Installer l’application</span><span class="settings-chevron">›</span></button>
+          <p id="installHelp" class="settings-note">Sur iPhone : ouvrez le menu Partager de Safari, puis choisissez « Sur l’écran d’accueil ».</p>
+          <button id="helpBtn" class="settings-row"><span class="settings-icon">?</span><span>Aide et import depuis Android</span><span class="settings-chevron">›</span></button>
+          <button id="privacyLink" class="settings-row"><span class="settings-icon">◉</span><span>Confidentialité</span><span class="settings-chevron">›</span></button>
+        </section>
+        <section class="settings-group settings-danger-group" aria-labelledby="settingsDangerTitle">
+          <h3 id="settingsDangerTitle">Zone sensible</h3>
+          <button id="clearBtn" class="settings-row settings-danger"><span class="settings-icon">⌫</span><span>Supprimer l’archive de cet appareil</span><span class="settings-chevron">›</span></button>
+          <p class="settings-note">Cette action efface définitivement les messages et pièces jointes enregistrés ici.</p>
+        </section>
       </div>
     </div>
   </div>

@@ -207,6 +207,7 @@ export async function importFile(file, { controller = new AbortController(), onP
 
   const abortController = controller;
   importController = abortController;
+  updateHeaderAction();
 
   showLoader();
   updateProgress(0, file.size);
@@ -281,6 +282,7 @@ export async function importFile(file, { controller = new AbortController(), onP
     }
   } finally {
     if (importController === abortController) importController = null;
+    updateHeaderAction();
     if (pendingReload && typeof window !== "undefined") {
       pendingReload = false;
       window.location.reload();
@@ -456,8 +458,23 @@ function render() {
   if (welcomeEl) welcomeEl.hidden = allMessages.length > 0 || chats.length > 0;
   if (workspaceEl) workspaceEl.hidden = allMessages.length === 0 && chats.length === 0;
   if (chatCountEl) chatCountEl.textContent = chats.length.toString();
+  updateHeaderAction();
 
   renderList();
+}
+
+function updateHeaderAction() {
+  const button = $("importBtn");
+  const label = $("headerActionLabel");
+  if (!button || !label) return;
+
+  const hasArchive = allMessages.length > 0 || chats.length > 0;
+  label.textContent = importController ? "Import en cours" : hasArchive ? "Supprimer" : "Importer";
+  button.classList.toggle("header-action-delete", hasArchive && !importController);
+  button.disabled = Boolean(importController);
+  button.setAttribute("aria-label", hasArchive ? "Supprimer l’archive" : "Importer une archive XML");
+  const icon = button.querySelector(".btn-icon");
+  if (icon) icon.textContent = hasArchive ? "⌫" : "+";
 }
 
 function renderList() {
@@ -630,10 +647,35 @@ function setupEventListeners() {
   const closePrivacy = $("closePrivacy");
   const privacyModal = $("privacyModal");
   const installBtn = $("installBtn");
+  const settingsBtn = $("settingsBtn");
+  const closeSettings = $("closeSettings");
+  const settingsModal = $("settingsModal");
+  const settingsImportBtn = $("settingsImportBtn");
+  const privacyFooterLink = $("privacyFooterLink");
 
-  if (fileInput) fileInput.onchange = e => importFile(e.target.files[0]);
-  if (importBtn) importBtn.onclick = () => fileInput?.click();
+  if (fileInput) fileInput.onchange = e => {
+    importFile(e.target.files[0]);
+    e.target.value = "";
+  };
+  const openFilePicker = () => fileInput?.click();
+  const deleteArchive = async () => {
+    if (!allMessages.length && !chats.length) return;
+    if (!confirm("Supprimer toutes les conversations de cet appareil ? Cette action est irréversible.")) return;
+    cleanupObjectUrls();
+    await clearAllData();
+    selected = null;
+    render();
+    toast("Archive supprimée");
+  };
+  if (importBtn) importBtn.onclick = () => {
+    if (allMessages.length || chats.length) deleteArchive();
+    else openFilePicker();
+  };
   if (welcomeImport) welcomeImport.onclick = () => fileInput?.click();
+  if (settingsImportBtn) settingsImportBtn.onclick = openFilePicker;
+  if (settingsBtn) settingsBtn.onclick = () => { if (settingsModal) settingsModal.hidden = false; };
+  if (closeSettings) closeSettings.onclick = () => { if (settingsModal) settingsModal.hidden = true; };
+  if (settingsModal) settingsModal.onclick = e => { if (e.target === settingsModal) settingsModal.hidden = true; };
   if (search) search.oninput = renderList;
   if (backBtn) backBtn.onclick = () => {
     cleanupObjectUrls();
@@ -672,13 +714,7 @@ function setupEventListeners() {
     toast("Export JSON préparé");
   };
 
-  if (clearBtn) clearBtn.onclick = async () => {
-    if (!confirm("Effacer toutes les conversations stockées sur cet appareil ? Cette action est irréversible.")) return;
-    cleanupObjectUrls();
-    await clearAllData();
-    render();
-    toast("Archive effacée");
-  };
+  if (clearBtn) clearBtn.onclick = deleteArchive;
 
   if (cancelBtn) cancelBtn.onclick = () => {
     if (importController) {
@@ -693,27 +729,43 @@ function setupEventListeners() {
   if (closeHelp) closeHelp.onclick = () => { if (helpModal) helpModal.hidden = true; };
   if (helpModal) helpModal.onclick = e => { if (e.target === helpModal) helpModal.hidden = true; };
 
-  if (privacyLink) privacyLink.onclick = e => {
+  const openPrivacy = e => {
     e.preventDefault();
+    if (settingsModal) settingsModal.hidden = true;
     if (privacyModal) privacyModal.hidden = false;
   };
+  if (privacyLink) privacyLink.onclick = openPrivacy;
+  if (privacyFooterLink) privacyFooterLink.onclick = openPrivacy;
   if (closePrivacy) closePrivacy.onclick = () => { if (privacyModal) privacyModal.hidden = true; };
   if (privacyModal) privacyModal.onclick = e => { if (e.target === privacyModal) privacyModal.hidden = true; };
 
   // PWA Install
-  if (installBtn) installBtn.hidden = true;
   let deferredPrompt;
 
   if (installBtn) {
+    if (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true) {
+      installBtn.querySelector("span:nth-child(2)").textContent = "Application installée";
+    }
     installBtn.onclick = async () => {
       if (deferredPrompt) {
+        if (settingsModal) settingsModal.hidden = true;
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
         if (outcome === "accepted") {
-          toast("Installation en cours...");
-          installBtn.hidden = true;
+          toast("Installation en cours…");
         }
         deferredPrompt = null;
+      } else if (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true) {
+        toast("Archives SMS est déjà installée");
+      } else {
+        const installHelp = $("installHelp");
+        if (installHelp) {
+          installHelp.textContent = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+            ? "Pour installer sur iPhone : dans Safari, touchez Partager, puis « Sur l’écran d’accueil » et Ajouter."
+            : "Ouvrez le menu de votre navigateur, puis choisissez « Installer l’application » ou « Ajouter à l’écran d’accueil ».";
+          installHelp.classList.add("install-help-highlight");
+        }
+        toast("Consultez les étapes affichées dans Réglages");
       }
     };
   }
@@ -721,13 +773,12 @@ function setupEventListeners() {
   window.addEventListener("beforeinstallprompt", e => {
     e.preventDefault();
     deferredPrompt = e;
-    if (installBtn) installBtn.hidden = false;
   });
 
   window.addEventListener("appinstalled", () => {
     toast("App installée !");
-    if (installBtn) installBtn.hidden = true;
     deferredPrompt = null;
+    if (installBtn) installBtn.querySelector("span:nth-child(2)").textContent = "Application installée";
   });
 
   // Keyboard
@@ -735,6 +786,7 @@ function setupEventListeners() {
     if (e.key === "Escape") {
       if (helpModal && !helpModal.hidden) helpModal.hidden = true;
       if (privacyModal && !privacyModal.hidden) privacyModal.hidden = true;
+      if (settingsModal && !settingsModal.hidden) settingsModal.hidden = true;
       if (innerWidth <= 700) {
         cleanupObjectUrls();
         const convEl = $("workspace")?.querySelector(".conversation");
