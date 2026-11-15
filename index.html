@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#f5f5f7">
-  <meta name="description" content="Lisez vos archives de SMS exportées depuis SMS Backup & Restore. Application web locale, 100% gratuite et sans serveur.">
+  <meta name="description" content="Lisez vos archives de SMS exportées depuis SMS Backup & Restore. Application web locale, 100% gratuite et sans serveur." data-i18n-content="meta.description">
   <meta name="keywords" content="SMS, archive, backup, restore, XML, Android, export, import">
   <meta name="author" content="Clement1211">
   
@@ -32,19 +32,19 @@
 <body>
   <!-- Update banner -->
   <div id="updateBanner" class="update-banner" hidden>
-    <span>Mise à jour disponible</span>
-    <button id="reloadBtn" class="reload-btn">Recharger</button>
-    <button id="closeUpdateBtn" class="close-banner-btn">×</button>
+    <span data-i18n="updates.available">Mise à jour disponible</span>
+    <button id="reloadBtn" class="reload-btn" data-i18n="updates.reload">Recharger</button>
+    <button id="closeUpdateBtn" class="close-banner-btn" data-i18n-aria-label="settings.closeAria">×</button>
   </div>
   <header class="topbar">
     <div class="brand">
-      <div class="eyebrow">ARCHIVE LOCALE</div>
-      <h1>Messages</h1>
+      <div class="eyebrow" data-i18n="header.eyebrow">ARCHIVE LOCALE</div>
+      <h1 data-i18n="header.title">Messages</h1>
     </div>
     <div class="header-actions">
-      <button id="settingsBtn" class="settings-button" aria-label="Réglages" title="Réglages">⚙</button>
+      <button id="settingsBtn" class="settings-button" aria-label="Réglages" title="Réglages" data-i18n-aria-label="header.settingsAria" data-i18n-title="header.settingsAria">⚙</button>
       <button id="importBtn" class="header-action primary">
-        <span class="btn-icon">＋</span><span id="headerActionLabel">Importer</span>
+        <span class="btn-icon">＋</span><span id="headerActionLabel" data-i18n="header.import">Importer</span>
       </button>
     </div>
     <input id="fileInput" type="file" accept=".xml,text/xml,application/xml" hidden>
@@ -57,8 +57,8 @@
         <div id="progressBar" class="progress-fill" style="width: 0%"></div>
       </div>
       <div class="progress-info">
-        <span id="progressText">0 / 0 octets</span>
-        <button id="cancelImportBtn" class="cancel-btn">Annuler</button>
+        <span id="progressText">0 / 0</span>
+        <button id="cancelImportBtn" class="cancel-btn" data-i18n="import.cancel">Annuler</button>
       </div>
     </div>
   </div>
@@ -66,37 +66,37 @@
   <main>
     <section id="welcome" class="welcome">
       <div class="bubble-icon">✉</div>
-      <h2>Vos messages, retrouvés.</h2>
-      <p>Importez un export XML de <strong>SMS Backup &amp; Restore</strong>. Les données restent <strong>100% locales</strong> sur cet appareil.</p>
+      <h2 data-i18n="home.title">Vos messages, retrouvés.</h2>
+      <p data-i18n-html="home.description">Importez un export XML de <strong>SMS Backup &amp; Restore</strong>. Vos messages restent <strong>sur cet appareil</strong>.</p>
       <button id="welcomeImport" class="primary">
-        <span class="btn-icon">📁</span> Choisir une sauvegarde XML
+        <span class="btn-icon">＋</span><span data-i18n="home.chooseFile">Choisir une sauvegarde XML</span>
       </button>
-      <p class="hint">Les pièces jointes MMS s'affichent automatiquement si présentes dans l'export.</p>
+      <p class="hint" data-i18n="home.hint">Les pièces jointes MMS s’affichent si elles sont présentes dans l’export.</p>
     </section>
     
     <!-- Loader for other operations -->
     <div id="loader" class="loader" hidden>
       <div class="loader-content">
         <div class="spinner"></div>
-        <p id="loaderText">Chargement en cours...</p>
+        <p id="loaderText" data-i18n="loading">Chargement en cours…</p>
       </div>
     </div>
     
     <section id="workspace" hidden>
       <aside class="sidebar">
-        <div class="search-wrap"><input id="search" type="search" placeholder="Rechercher un contact ou un message…" autofocus></div>
-        <div class="list-heading"><span>CONVERSATIONS</span><span id="chatCount">0</span></div>
+        <div class="search-wrap"><input id="search" type="search" placeholder="Rechercher un contact ou un message…" data-i18n-placeholder="search.placeholder" autofocus></div>
+        <div class="list-heading"><span data-i18n="conversations.title">CONVERSATIONS</span><span id="chatCount">0</span></div>
         <div id="chatList" class="chat-list"></div>
       </aside>
       <section class="conversation">
         <div id="emptyChat" class="empty-chat">
           <div class="bubble-icon">☏</div>
-          <h2>Choisissez une conversation</h2>
-          <p>Les messages apparaîtront ici.</p>
+          <h2 data-i18n="conversation.selectTitle">Choisissez une conversation</h2>
+          <p data-i18n="conversation.selectHint">Les messages apparaîtront ici.</p>
         </div>
         <div id="chatView" hidden>
           <div class="chat-header">
-            <button id="backBtn" class="back">‹</button>
+            <button id="backBtn" class="back" aria-label="Retour" data-i18n-aria-label="conversation.backAria">‹</button>
             <div>
               <h2 id="chatTitle"></h2>
               <p id="chatSubtitle"></p>
@@ -111,11 +111,11 @@
   <!-- Footer -->
   <footer class="footer">
     <div class="footer-content">
-      <span>Archives SMS - Lecteur XML de SMS Backup & Restore</span>
+      <span data-i18n="footer.description">Archives SMS — lecteur de sauvegardes XML</span>
       <div class="footer-links">
-        <a href="#" id="privacyFooterLink">Confidentialité</a>
+        <a href="#" id="privacyFooterLink" data-i18n="settings.privacy">Confidentialité</a>
         <span class="separator">|</span>
-        <a href="https://github.com/Clement1211/archive-sms" target="_blank">GitHub</a>
+        <a href="https://github.com/Clement1211/archive-sms" target="_blank" rel="noopener noreferrer" data-i18n-title="footer.githubAria">GitHub</a>
       </div>
     </div>
   </footer>
@@ -124,14 +124,14 @@
   <div id="privacyModal" class="modal" hidden>
     <div class="modal-content modal-small">
       <div class="modal-header">
-        <h2>Confidentialité</h2>
-        <button id="closePrivacy" class="close-btn">×</button>
+        <h2 data-i18n="privacy.title">Confidentialité</h2>
+        <button id="closePrivacy" class="close-btn" aria-label="Fermer" data-i18n-aria-label="settings.closeAria">×</button>
       </div>
       <div class="modal-body">
-        <p><strong>100% Local :</strong> Aucune donnée ne quitte votre navigateur.</p>
-        <p><strong>Stockage :</strong> Vos SMS sont sauvegardés dans IndexedDB, uniquement sur cet appareil.</p>
-        <p><strong>Sécurité :</strong> Les fichiers XML/JSON ne sont jamais envoyés vers un serveur.</p>
-        <p><strong>Suppression :</strong> Utilisez le bouton "Effacer" pour supprimer toutes les données.</p>
+        <p><strong data-i18n="privacy.localTitle">100 % local :</strong> <span data-i18n="privacy.localText">aucune donnée ne quitte votre navigateur.</span></p>
+        <p><strong data-i18n="privacy.storageTitle">Stockage :</strong> <span data-i18n="privacy.storageText">vos SMS sont enregistrés dans la base locale de cet appareil.</span></p>
+        <p><strong data-i18n="privacy.securityTitle">Sécurité :</strong> <span data-i18n="privacy.securityText">les fichiers XML et JSON ne sont jamais envoyés vers un serveur.</span></p>
+        <p><strong data-i18n="privacy.deleteTitle">Suppression :</strong> <span data-i18n="privacy.deleteText">utilisez « Supprimer » pour effacer l’archive de cet appareil.</span></p>
       </div>
     </div>
   </div>
@@ -139,26 +139,30 @@
   <div id="settingsModal" class="modal settings-modal" hidden>
     <div class="modal-content modal-small">
       <div class="modal-header">
-        <h2>Réglages</h2>
-        <button id="closeSettings" class="close-btn" aria-label="Fermer">×</button>
+        <h2 data-i18n="settings.title">Réglages</h2>
+        <button id="closeSettings" class="close-btn" aria-label="Fermer" data-i18n-aria-label="settings.closeAria">×</button>
       </div>
       <div class="modal-body settings-body">
+        <section class="settings-group" aria-labelledby="settingsLanguageTitle">
+          <h3 id="settingsLanguageTitle" data-i18n="settings.preferences">Préférences</h3>
+          <label class="language-row"><span data-i18n="settings.language">Langue</span><select id="languageSelect" class="language-select" aria-label="Langue de l’application" data-i18n-aria-label="settings.languageAria"></select></label>
+        </section>
         <section class="settings-group" aria-labelledby="settingsArchiveTitle">
-          <h3 id="settingsArchiveTitle">Votre archive</h3>
-          <button id="exportBtn" class="settings-row"><span class="settings-icon">⇧</span><span>Exporter une copie</span><span class="settings-chevron">›</span></button>
-          <button id="settingsImportBtn" class="settings-row"><span class="settings-icon">＋</span><span>Importer ou remplacer l’archive</span><span class="settings-chevron">›</span></button>
+          <h3 id="settingsArchiveTitle" data-i18n="settings.archive">Votre archive</h3>
+          <button id="exportBtn" class="settings-row"><span class="settings-icon">⇧</span><span data-i18n="settings.export">Exporter une copie</span><span class="settings-chevron">›</span></button>
+          <button id="settingsImportBtn" class="settings-row"><span class="settings-icon">＋</span><span data-i18n="settings.import">Importer ou remplacer l’archive</span><span class="settings-chevron">›</span></button>
         </section>
         <section class="settings-group" aria-labelledby="settingsInstallTitle">
-          <h3 id="settingsInstallTitle">Application</h3>
-          <button id="installBtn" class="settings-row"><span class="settings-icon">↓</span><span>Installer l’application</span><span class="settings-chevron">›</span></button>
-          <p id="installHelp" class="settings-note">Sur iPhone : ouvrez le menu Partager de Safari, puis choisissez « Sur l’écran d’accueil ».</p>
-          <button id="helpBtn" class="settings-row"><span class="settings-icon">?</span><span>Aide et import depuis Android</span><span class="settings-chevron">›</span></button>
-          <button id="privacyLink" class="settings-row"><span class="settings-icon">◉</span><span>Confidentialité</span><span class="settings-chevron">›</span></button>
+          <h3 id="settingsInstallTitle" data-i18n="settings.application">Application</h3>
+          <button id="installBtn" class="settings-row"><span class="settings-icon">↓</span><span data-i18n="settings.install">Installer l’application</span><span class="settings-chevron">›</span></button>
+          <p id="installHelp" class="settings-note" data-i18n="settings.installIos">Sur iPhone : ouvrez le menu Partager de Safari, puis choisissez « Sur l’écran d’accueil ».</p>
+          <button id="helpBtn" class="settings-row"><span class="settings-icon">?</span><span data-i18n="settings.help">Aide et import depuis Android</span><span class="settings-chevron">›</span></button>
+          <button id="privacyLink" class="settings-row"><span class="settings-icon">◉</span><span data-i18n="settings.privacy">Confidentialité</span><span class="settings-chevron">›</span></button>
         </section>
         <section class="settings-group settings-danger-group" aria-labelledby="settingsDangerTitle">
-          <h3 id="settingsDangerTitle">Zone sensible</h3>
-          <button id="clearBtn" class="settings-row settings-danger"><span class="settings-icon">⌫</span><span>Supprimer l’archive de cet appareil</span><span class="settings-chevron">›</span></button>
-          <p class="settings-note">Cette action efface définitivement les messages et pièces jointes enregistrés ici.</p>
+          <h3 id="settingsDangerTitle" data-i18n="settings.danger">Zone sensible</h3>
+          <button id="clearBtn" class="settings-row settings-danger"><span class="settings-icon">⌫</span><span data-i18n="settings.delete">Supprimer l’archive de cet appareil</span><span class="settings-chevron">›</span></button>
+          <p class="settings-note" data-i18n="settings.deleteNote">Cette action efface définitivement les messages et pièces jointes enregistrés ici.</p>
         </section>
       </div>
     </div>
@@ -168,55 +172,49 @@
   <div id="helpModal" class="modal" hidden>
     <div class="modal-content">
       <div class="modal-header">
-        <h2>📱 Comment exporter vos SMS depuis Android ?</h2>
-        <button id="closeHelp" class="close-btn">×</button>
+        <h2 data-i18n="help.title">Comment exporter vos SMS depuis Android ?</h2>
+        <button id="closeHelp" class="close-btn" aria-label="Fermer" data-i18n-aria-label="settings.closeAria">×</button>
       </div>
       <div class="modal-body">
         <div class="tutorial-step">
-          <h3>➊ Installez SMS Backup & Restore</h3>
-          <p>Téléchargez l'application depuis le Play Store :</p>
-          <p><a href="https://play.google.com/store/apps/details?id=com.riteshsahu.SMSBackupRestore" target="_blank" class="app-link">
+          <h3 data-i18n="help.step1.title">1. Installez SMS Backup &amp; Restore</h3>
+          <p data-i18n="help.step1.body">Téléchargez l’application depuis le Play Store :</p>
+          <p><a href="https://play.google.com/store/apps/details?id=com.riteshsahu.SMSBackupRestore" target="_blank" rel="noopener noreferrer" class="app-link" data-i18n="help.step1.link">
             Disponible sur Google Play
           </a></p>
         </div>
         
         <div class="tutorial-step">
-          <h3>➋ Créez une sauvegarde XML</h3>
+          <h3 data-i18n="help.step2.title">2. Créez une sauvegarde XML</h3>
           <ol>
-            <li>Ouvrez l'application</li>
-            <li>Autorisez les permissions de lecture des SMS</li>
-            <li>Cliquez sur <strong>"Sauvegarder"</strong> ou <strong>"Backup"</strong></li>
-            <li>Choisissez le format <strong>XML</strong> (pas JSON)</li>
-            <li>Sélectionnez les conversations à exporter (ou "Tout")</li>
-            <li>Lancez la sauvegarde</li>
+            <li data-i18n="help.step2.open">Ouvrez l’application.</li>
+            <li data-i18n="help.step2.permissions">Autorisez l’accès aux SMS.</li>
+            <li data-i18n="help.step2.backup">Choisissez « Sauvegarder » ou « Backup ».</li>
+            <li data-i18n="help.step2.format">Choisissez le format XML (pas JSON).</li>
+            <li data-i18n="help.step2.conversations">Sélectionnez les conversations à exporter.</li>
+            <li data-i18n="help.step2.start">Lancez la sauvegarde.</li>
           </ol>
         </div>
         
         <div class="tutorial-step">
-          <h3>➌ Trouvez votre fichier XML</h3>
-          <p>Le fichier est généralement sauvegardé dans : <code>/SMS Backup Restore/</code> sur votre stockage interne.</p>
-          <p>Nommez-le par exemple : <code>sms-backup-2024.xml</code></p>
+          <h3 data-i18n="help.step3.title">3. Trouvez votre fichier XML</h3>
+          <p data-i18n-html="help.step3.body">Le fichier se trouve généralement dans le dossier <code>/SMS Backup Restore/</code> de votre stockage interne.</p>
+          <p data-i18n-html="help.step3.example">Exemple : <code>sms-backup-2024.xml</code></p>
         </div>
         
         <div class="tutorial-step">
-          <h3>⍟ Transférez le fichier vers cet appareil</h3>
-          <p>Plusieurs méthodes possibles :</p>
-          <ul>
-            <li>✉️ Par email</li>
-            <li>📁 Via Google Drive / Dropbox</li>
-            <li>🔌 Par câble USB</li>
-            <li>📶 Par Bluetooth</li>
-          </ul>
+          <h3 data-i18n="help.step4.title">4. Transférez le fichier vers cet appareil</h3>
+          <p data-i18n="help.step4.body">Par exemple par e-mail, via un espace de stockage en ligne ou par câble USB.</p>
         </div>
         
         <div class="tutorial-step">
-          <h3>➎ Importez le fichier ici</h3>
-          <p>Cliquez sur le bouton <strong>"Importer XML"</strong> ci-dessus et sélectionnez votre fichier.</p>
-          <p>⚡ <strong>Astuce :</strong> Installez cette application sur votre écran d'accueil pour un accès rapide !</p>
+          <h3 data-i18n="help.step5.title">5. Importez le fichier ici</h3>
+          <p data-i18n="help.step5.body">Choisissez « Importer » et sélectionnez votre fichier XML.</p>
+          <p data-i18n="help.step5.tip">Astuce : ajoutez l’application à l’écran d’accueil pour y accéder rapidement.</p>
         </div>
         
         <div class="tutorial-warning">
-          <strong>⚠️ Important :</strong> vos SMS restent <strong>100% locaux</strong>. Aucune donnée n'est envoyée vers un serveur ou partagée avec qui que ce soit.
+          <strong data-i18n="help.warningTitle">Important :</strong> <span data-i18n="help.warningBody">vos SMS restent sur cet appareil. Aucune donnée n’est envoyée vers un serveur.</span>
         </div>
       </div>
     </div>

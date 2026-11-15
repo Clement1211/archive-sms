@@ -12,6 +12,9 @@ const CRITICAL_FILES = [
   './index.html',
   './src/app.js',
   './src/parser.js',
+  './src/i18n.js',
+  './src/locales/fr.js',
+  './src/locales/en.js',
   './styles/styles.css',
   './manifest.webmanifest'
 ];

@@ -11,6 +11,7 @@
 - **PWA Installable** sur écran d'accueil
 - **Mode hors ligne** après premier chargement
 - **Interface responsive** adaptée mobile/desktop
+- **Interface français / anglais**, avec préférence mémorisée sur l’appareil
 
 ## 📱 Installation
 
@@ -77,7 +78,13 @@ Rendez-vous sur : [https://clement1211.github.io/archive-sms](https://clement121
 - **100% Local** : Aucune donnée ne quitte votre navigateur
 - **Stockage** : Vos SMS sont sauvegardés dans IndexedDB sur cet appareil
 - **Sécurité** : Les fichiers XML ne sont jamais envoyés vers un serveur
-- **Suppression** : Utilisez le bouton "Effacer" pour supprimer toutes les données
+- **Suppression** : Utilisez le bouton « Supprimer » pour effacer toutes les données
+
+## 🌐 Langues de l’interface
+
+La langue se choisit dans **Réglages → Préférences** et reste mémorisée sur l’appareil. Au premier lancement, l’application suit la langue du navigateur si elle est prise en charge; sinon elle utilise le français.
+
+Les textes sont regroupés dans le dossier `src/locales/`, avec un fichier par langue (`fr.js`, `en.js`). Pour ajouter une langue, créez son catalogue et ajoutez une entrée à la liste `languages` dans `src/i18n.js`; le sélecteur est généré à partir de cette liste. Gardez les mêmes clés dans chaque catalogue; toute traduction manquante retombe sur le français. Ajoutez aussi son fichier à la liste des ressources critiques de `sw.js` pour qu’il soit disponible hors ligne.
 
 ## 📁 Structure du projet
 
@@ -86,7 +93,11 @@ archive-sms/
 ├── index.html              # Page principale
 ├── src/
 │   ├── app.js               # Application principale
+│   ├── i18n.js              # Gestion de la langue et des traductions
 │   └── parser.js            # Parseur XML partagé
+├── src/locales/
+│   ├── fr.js                # Textes français
+│   └── en.js                # Textes anglais
 ├── styles/
 │   └── styles.css           # Styles de l'application
 ├── sw.js                   # Service Worker (PWA)

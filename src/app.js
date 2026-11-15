@@ -1,4 +1,5 @@
 import { extract, parseSmsElement, parseMmsElement } from "./parser.js";
+import { getAvailableLanguages, getIntlLocale, getLanguage, setLanguage, t, tPlural } from "./i18n.js";
 
 /**
  * Archives SMS - Web App for reading SMS Backup & Restore XML files
@@ -38,6 +39,7 @@ let selected = null;
 let importController = null;
 let pendingReload = false;
 let activeObjectUrls = new Set();
+let lastProgress = { bytesRead: 0, totalBytes: 0 };
 
 // ============================================
 // DOM HELPERS
@@ -54,19 +56,24 @@ function toast(message, duration = 2600) {
 }
 
 function updateProgress(bytesRead, totalBytes) {
+  lastProgress = { bytesRead, totalBytes };
   const progressBar = $("progressBar");
   const progressText = $("progressText");
   if (progressBar && progressText) {
     const percent = totalBytes > 0 ? Math.round((bytesRead / totalBytes) * 100) : 0;
     progressBar.style.width = `${percent}%`;
-    progressText.textContent = `${formatBytes(bytesRead)} / ${formatBytes(totalBytes)}`;
+    progressText.textContent = t("import.progress", {
+      read: formatBytes(bytesRead),
+      total: formatBytes(totalBytes)
+    });
   }
 }
 
 function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  const number = new Intl.NumberFormat(getIntlLocale(), { maximumFractionDigits: 1 });
+  if (bytes < 1024) return `${number.format(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${number.format(bytes / 1024)} KB`;
+  return `${number.format(bytes / (1024 * 1024))} MB`;
 }
 
 function showLoader() {
@@ -114,8 +121,8 @@ function dbTx(storeNames, mode, callback) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeNames, mode);
     tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error || new Error("Transaction annulée"));
-    tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
+    tx.onerror = () => reject(tx.error || new Error(t("error.transactionCanceled")));
+    tx.onabort = () => reject(tx.error || new Error(t("error.transactionCanceled")));
     callback(tx);
   });
 }
@@ -126,8 +133,8 @@ function dbGet(store, key) {
     const req = tx.objectStore(store).get(key);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
-    tx.onerror = () => reject(tx.error || new Error("Transaction annulée"));
-    tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
+    tx.onerror = () => reject(tx.error || new Error(t("error.transactionCanceled")));
+    tx.onabort = () => reject(tx.error || new Error(t("error.transactionCanceled")));
   });
 }
 
@@ -246,7 +253,7 @@ export async function importFile(file, { controller = new AbortController(), onP
 
     if (abortController.signal.aborted) throw new DOMException("Import annulé", "AbortError");
     if (messagesBatch.length) await saveImportBatch(messagesBatch, attachmentsBatch);
-    if (totalMessages === 0) throw new Error("Aucun message valide trouvé dans ce fichier XML");
+    if (totalMessages === 0) throw new Error(t("error.noMessages"));
 
     // Replace the current archive in one transaction only after the file was fully parsed.
     await replaceAllDataFromStaging();
@@ -267,18 +274,21 @@ export async function importFile(file, { controller = new AbortController(), onP
 
     hideLoader();
     if (typeof document !== "undefined") render();
-    toast(`${totalMessages} messages importés`);
+    toast(tPlural("toast.imported", totalMessages));
   } catch (error) {
     try { await clearImportStaging(); }
     catch (cleanupError) { console.warn("Staging cleanup failed:", cleanupError); }
     hideLoader();
-    if (error?.name === "AbortError") {
-      toast("Import annulé");
+    if (error?.name === "AbortError" && abortController.signal.aborted) {
+      toast(t("toast.importCanceled"));
     } else if (error?.name === "QuotaExceededError") {
-      toast("Espace de stockage insuffisant sur cet appareil");
+      toast(t("toast.storageFull"));
     } else {
       console.error("Import error:", error);
-      toast(`Erreur: ${error?.message || "Transaction annulée"}`);
+      const message = ["AbortError", "TransactionInactiveError", "InvalidStateError"].includes(error?.name)
+        ? t("error.transactionCanceled")
+        : error?.message || t("error.transactionCanceled");
+      toast(t("error.import", { message }));
     }
   } finally {
     if (importController === abortController) importController = null;
@@ -330,8 +340,8 @@ function replaceAllDataFromStaging() {
   migrate(STORE_STAGING_ATTACHMENTS, STORE_ATTACHMENTS);
   return new Promise((resolve, reject) => {
     tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error || new Error("Transaction annulée"));
-    tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
+    tx.onerror = () => reject(tx.error || new Error(t("error.transactionCanceled")));
+    tx.onabort = () => reject(tx.error || new Error(t("error.transactionCanceled")));
   });
 }
 
@@ -360,8 +370,8 @@ async function loadAllMessagesFromDB() {
       resolve(messages.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0)));
     };
     req.onerror = () => reject(req.error);
-    tx.onerror = () => reject(tx.error || new Error("Transaction annulée"));
-    tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
+    tx.onerror = () => reject(tx.error || new Error(t("error.transactionCanceled")));
+    tx.onabort = () => reject(tx.error || new Error(t("error.transactionCanceled")));
   });
 }
 
@@ -381,8 +391,8 @@ async function loadAttachment(attachmentId) {
       }
     };
     req.onerror = () => reject(req.error);
-    tx.onerror = () => reject(tx.error || new Error("Transaction annulée"));
-    tx.onabort = () => reject(tx.error || new Error("Transaction annulée"));
+    tx.onerror = () => reject(tx.error || new Error(t("error.transactionCanceled")));
+    tx.onabort = () => reject(tx.error || new Error(t("error.transactionCanceled")));
   });
 }
 
@@ -469,29 +479,30 @@ function updateHeaderAction() {
   if (!button || !label) return;
 
   const hasArchive = allMessages.length > 0 || chats.length > 0;
-  label.textContent = importController ? "Import en cours" : hasArchive ? "Supprimer" : "Importer";
+  label.textContent = importController ? t("header.importing") : hasArchive ? t("header.delete") : t("header.import");
   button.classList.toggle("header-action-delete", hasArchive && !importController);
   button.disabled = Boolean(importController);
-  button.setAttribute("aria-label", hasArchive ? "Supprimer l’archive" : "Importer une archive XML");
+  button.setAttribute("aria-label", t(hasArchive ? "header.deleteAria" : "header.importAria"));
   const icon = button.querySelector(".btn-icon");
   if (icon) icon.textContent = hasArchive ? "⌫" : "+";
 }
 
 function renderList() {
-  const q = $("search")?.value?.toLocaleLowerCase("fr") || "";
+  const q = $("search")?.value?.toLocaleLowerCase(getIntlLocale()) || "";
   const list = $("chatList");
   if (!list) return;
 
   list.innerHTML = "";
 
   const filtered = chats.filter(c =>
-    c.contactName.toLocaleLowerCase("fr").includes(q) ||
-    c.address.toLocaleLowerCase("fr").includes(q) ||
-    (c.last?.body?.toLocaleLowerCase("fr") || "").includes(q)
+    c.contactName.toLocaleLowerCase(getIntlLocale()).includes(q) ||
+    c.address.toLocaleLowerCase(getIntlLocale()).includes(q) ||
+    (c.last?.body?.toLocaleLowerCase(getIntlLocale()) || "").includes(q)
   );
 
   for (const c of filtered) {
-    const item = document.createElement("div");
+    const item = document.createElement("button");
+    item.type = "button";
     item.className = "chat-item" + (selected === c.address ? " active" : "");
 
     const av = document.createElement("div");
@@ -514,7 +525,7 @@ function renderList() {
 
     const preview = document.createElement("div");
     preview.className = "chat-preview";
-    preview.textContent = (c.last?.out ? "Vous : " : "") + (c.last?.body || "");
+    preview.textContent = (c.last?.out ? t("conversation.outgoingPrefix") : "") + (c.last?.body || "");
 
     line.append(name, dt);
     meta.append(line, preview);
@@ -526,12 +537,12 @@ function renderList() {
 
 function fmtDate(d) {
   if (!d) return "";
-  return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(d);
+  return new Intl.DateTimeFormat(getIntlLocale(), { day: "2-digit", month: "short", year: "numeric" }).format(d);
 }
 
 function fmtTime(d) {
   if (!d) return "";
-  return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(d);
+  return new Intl.DateTimeFormat(getIntlLocale(), { hour: "2-digit", minute: "2-digit" }).format(d);
 }
 
 function openChat(address) {
@@ -550,9 +561,10 @@ function openChat(address) {
   if (emptyChatEl) emptyChatEl.hidden = true;
   if (chatViewEl) chatViewEl.hidden = false;
   if (chatTitleEl) chatTitleEl.textContent = c.contactName;
+  const messageCount = tPlural("conversation.messageCount", c.messages.length);
   if (chatSubtitleEl) chatSubtitleEl.textContent = c.contactName === address
-    ? `${c.messages.length} messages`
-    : `${address} · ${c.messages.length} messages`;
+    ? messageCount
+    : `${address} · ${messageCount}`;
 
   if (messagesEl) messagesEl.innerHTML = "";
 
@@ -563,7 +575,7 @@ function openChat(address) {
     if (day !== lastDay) {
       const sep = document.createElement("div");
       sep.className = "day-divider";
-      sep.textContent = day || "Date inconnue";
+      sep.textContent = day || t("conversation.unknownDate");
       messagesEl.append(sep);
       lastDay = day;
     }
@@ -582,7 +594,7 @@ function openChat(address) {
       for (const attId of m.attachments) {
         const attPlaceholder = document.createElement("span");
         attPlaceholder.className = "attachment-loading";
-        attPlaceholder.textContent = "Chargement...";
+        attPlaceholder.textContent = t("conversation.loadingAttachment");
         bubble.append(attPlaceholder);
 
         loadAttachment(attId).then(att => {
@@ -599,7 +611,7 @@ function openChat(address) {
               link.className = "attachment-link";
               link.href = att.url;
               link.download = att.name;
-              link.textContent = "Télécharger " + att.name;
+              link.textContent = t("conversation.downloadAttachment", { name: att.name });
               link.onclick = () => {
                 // Auto-cleanup after download
                 setTimeout(() => URL.revokeObjectURL(att.url), 10000);
@@ -652,6 +664,19 @@ function setupEventListeners() {
   const settingsModal = $("settingsModal");
   const settingsImportBtn = $("settingsImportBtn");
   const privacyFooterLink = $("privacyFooterLink");
+  const languageSelect = $("languageSelect");
+  const installLabel = installBtn?.querySelector("span:nth-child(2)");
+  const installHelp = $("installHelp");
+  let appInstalled = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  let installInstructionsExpanded = false;
+  const updateInstallInstructions = () => {
+    if (!installHelp) return;
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    installHelp.textContent = t(isIOS
+      ? installInstructionsExpanded ? "settings.installIosAction" : "settings.installIos"
+      : "settings.installOther");
+    installHelp.classList.toggle("install-help-highlight", installInstructionsExpanded);
+  };
 
   if (fileInput) fileInput.onchange = e => {
     importFile(e.target.files[0]);
@@ -660,12 +685,12 @@ function setupEventListeners() {
   const openFilePicker = () => fileInput?.click();
   const deleteArchive = async () => {
     if (!allMessages.length && !chats.length) return;
-    if (!confirm("Supprimer toutes les conversations de cet appareil ? Cette action est irréversible.")) return;
+    if (!confirm(t("confirm.deleteArchive"))) return;
     cleanupObjectUrls();
     await clearAllData();
     selected = null;
     render();
-    toast("Archive supprimée");
+    toast(t("toast.archiveDeleted"));
   };
   if (importBtn) importBtn.onclick = () => {
     if (allMessages.length || chats.length) deleteArchive();
@@ -673,6 +698,25 @@ function setupEventListeners() {
   };
   if (welcomeImport) welcomeImport.onclick = () => fileInput?.click();
   if (settingsImportBtn) settingsImportBtn.onclick = openFilePicker;
+  if (languageSelect) {
+    const options = getAvailableLanguages().map(({ code, name }) => {
+      const option = document.createElement("option");
+      option.value = code;
+      option.textContent = name;
+      return option;
+    });
+    languageSelect.replaceChildren(...options);
+    languageSelect.value = getLanguage();
+    languageSelect.onchange = () => setLanguage(languageSelect.value);
+    document.addEventListener("archive:languagechange", () => {
+      languageSelect.value = getLanguage();
+      updateProgress(lastProgress.bytesRead, lastProgress.totalBytes);
+      if (installLabel && appInstalled) installLabel.textContent = t("settings.installed");
+      updateInstallInstructions();
+      render();
+      if (selected) openChat(selected);
+    });
+  }
   if (settingsBtn) settingsBtn.onclick = () => { if (settingsModal) settingsModal.hidden = false; };
   if (closeSettings) closeSettings.onclick = () => { if (settingsModal) settingsModal.hidden = true; };
   if (settingsModal) settingsModal.onclick = e => { if (e.target === settingsModal) settingsModal.hidden = true; };
@@ -711,7 +755,7 @@ function setupEventListeners() {
     a.download = "archives-sms-export.json";
     a.click();
     URL.revokeObjectURL(a.href);
-    toast("Export JSON préparé");
+    toast(t("toast.exportReady"));
   };
 
   if (clearBtn) clearBtn.onclick = deleteArchive;
@@ -720,7 +764,7 @@ function setupEventListeners() {
     if (importController) {
       importController.abort();
       hideLoader();
-      toast("Import annulé");
+      toast(t("toast.importCanceled"));
     }
   };
 
@@ -743,32 +787,27 @@ function setupEventListeners() {
   let deferredPrompt;
 
   if (installBtn) {
-    if (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true) {
-      installBtn.querySelector("span:nth-child(2)").textContent = "Application installée";
-    }
+    if (appInstalled && installLabel) installLabel.textContent = t("settings.installed");
     installBtn.onclick = async () => {
       if (deferredPrompt) {
         if (settingsModal) settingsModal.hidden = true;
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
         if (outcome === "accepted") {
-          toast("Installation en cours…");
+          toast(t("toast.installing"));
         }
         deferredPrompt = null;
       } else if (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true) {
-        toast("Archives SMS est déjà installée");
+        toast(t("toast.alreadyInstalled"));
       } else {
-        const installHelp = $("installHelp");
-        if (installHelp) {
-          installHelp.textContent = /iPhone|iPad|iPod/i.test(navigator.userAgent)
-            ? "Pour installer sur iPhone : dans Safari, touchez Partager, puis « Sur l’écran d’accueil » et Ajouter."
-            : "Ouvrez le menu de votre navigateur, puis choisissez « Installer l’application » ou « Ajouter à l’écran d’accueil ».";
-          installHelp.classList.add("install-help-highlight");
-        }
-        toast("Consultez les étapes affichées dans Réglages");
+        installInstructionsExpanded = true;
+        updateInstallInstructions();
+        toast(t("toast.installHelp"));
       }
     };
   }
+
+  updateInstallInstructions();
 
   window.addEventListener("beforeinstallprompt", e => {
     e.preventDefault();
@@ -776,9 +815,10 @@ function setupEventListeners() {
   });
 
   window.addEventListener("appinstalled", () => {
-    toast("App installée !");
+    appInstalled = true;
+    toast(t("toast.appInstalled"));
     deferredPrompt = null;
-    if (installBtn) installBtn.querySelector("span:nth-child(2)").textContent = "Application installée";
+    if (installLabel) installLabel.textContent = t("settings.installed");
   });
 
   // Keyboard
@@ -852,6 +892,6 @@ if (typeof document !== "undefined") (async () => {
 
   } catch (e) {
     console.error("DB initialization error:", e);
-    toast("Stockage local indisponible dans ce navigateur");
+    toast(t("toast.storageUnavailable"));
   }
 })();
