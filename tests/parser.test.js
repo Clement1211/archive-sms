@@ -12,11 +12,17 @@ test('parseDateString accepts milliseconds and seconds', () => {
 });
 
 test('parseSmsElement parses the same production module used by the app', () => {
-  const message = parseSmsElement('<sms address=" +336 123 " date="1609459200000" type="2" body="Bonjour &amp; salut"/>');
+  const message = parseSmsElement('<sms address=" +336 123 " contact_name="Marie" date="1609459200000" type="2" body="Bonjour &amp; salut"/>');
   strictEqual(message.address, '+336 123');
+  strictEqual(message.contactName, 'Marie');
   strictEqual(message.body, 'Bonjour & salut');
   strictEqual(message.out, true);
   strictEqual(message.kind, 'sms');
+});
+
+test('parseSmsElement ignores unknown contact labels', () => {
+  const message = parseSmsElement('<sms address="+336123" contact_name="(Unknown)" type="1" body="Hi"/>');
+  strictEqual(message.contactName, null);
 });
 
 test('parseMmsElement extracts text and attachments', () => {

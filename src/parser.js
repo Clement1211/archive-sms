@@ -52,6 +52,12 @@ function generateId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
+function normalizeContactName(value) {
+  const name = (value || '').trim().replace(/\s+/g, ' ');
+  if (!name || /^(?:\(?unknown\)?|null|inconnu)$/i.test(name)) return null;
+  return name;
+}
+
 function parseDocument(xmlString) {
   const parser = new DOMParser();
   const document = parser.parseFromString(xmlString, 'application/xml');
@@ -67,6 +73,7 @@ export function parseSmsElement(elementString) {
     return {
       id: generateId('msg'),
       address,
+      contactName: normalizeContactName(element.getAttribute('contact_name')),
       body: element.getAttribute('body') || '',
       date: parseDateString(element.getAttribute('date')),
       kind: 'sms',
@@ -126,6 +133,7 @@ export function parseMmsElement(elementString) {
       message: {
         id: generateId('msg'),
         address,
+        contactName: normalizeContactName(element.getAttribute('contact_name')),
         body: body || (attachments.length ? 'Média' : ''),
         date,
         kind: 'mms',

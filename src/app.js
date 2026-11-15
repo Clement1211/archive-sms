@@ -438,6 +438,7 @@ function groupMessages(msgs) {
     .map(([address, messages]) => ({
       address,
       messages,
+      contactName: messages.reduce((name, message) => message.contactName || name, '') || address,
       last: messages[messages.length - 1]
     }))
     .sort((a, b) => (b.last.date?.getTime() || 0) - (a.last.date?.getTime() || 0));
@@ -467,6 +468,7 @@ function renderList() {
   list.innerHTML = "";
 
   const filtered = chats.filter(c =>
+    c.contactName.toLocaleLowerCase("fr").includes(q) ||
     c.address.toLocaleLowerCase("fr").includes(q) ||
     (c.last?.body?.toLocaleLowerCase("fr") || "").includes(q)
   );
@@ -487,7 +489,7 @@ function renderList() {
 
     const name = document.createElement("span");
     name.className = "chat-name";
-    name.textContent = c.address;
+    name.textContent = c.contactName;
 
     const dt = document.createElement("span");
     dt.className = "chat-date";
@@ -530,8 +532,10 @@ function openChat(address) {
 
   if (emptyChatEl) emptyChatEl.hidden = true;
   if (chatViewEl) chatViewEl.hidden = false;
-  if (chatTitleEl) chatTitleEl.textContent = address;
-  if (chatSubtitleEl) chatSubtitleEl.textContent = `${c.messages.length} messages`;
+  if (chatTitleEl) chatTitleEl.textContent = c.contactName;
+  if (chatSubtitleEl) chatSubtitleEl.textContent = c.contactName === address
+    ? `${c.messages.length} messages`
+    : `${address} · ${c.messages.length} messages`;
 
   if (messagesEl) messagesEl.innerHTML = "";
 
@@ -642,6 +646,7 @@ function setupEventListeners() {
     const exportedMessages = await Promise.all(messages.map(async message => ({
       id: message.id,
       address: message.address,
+      contactName: message.contactName,
       body: message.body,
       date: message.date?.toISOString(),
       kind: message.kind,
