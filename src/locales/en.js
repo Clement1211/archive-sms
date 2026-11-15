@@ -79,6 +79,8 @@ export default {
   "help.step5.tip": "Tip: add the app to your Home Screen for quick access.",
   "help.warningTitle": "Important:",
   "help.warningBody": "your SMS stay on this device. No data is sent to a server.",
+  "footer.site": "Website",
+  "footer.guides": "Guides",
   "footer.description": "SMS Archive — XML backup reader",
   "footer.githubAria": "Open GitHub repository (new tab)",
   "toast.imported.one": "{{count}} message imported",

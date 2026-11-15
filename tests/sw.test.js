@@ -10,6 +10,8 @@ import { strictEqual } from 'node:assert';
 const CRITICAL_FILES = [
   './',
   './index.html',
+  './app/',
+  './app/index.html',
   './src/app.js',
   './src/parser.js',
   './src/i18n.js',

@@ -1,0 +1,17 @@
+title: Archive SMS
+baseurl: /archive-sms
+url: https://clement1211.github.io
+description: Lisez vos sauvegardes SMS Backup & Restore localement sur iPhone, Mac et ordinateur.
+markdown: kramdown
+permalink: pretty
+plugins:
+  - jekyll-sitemap
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - tests
+  - package.json
+  - package-lock.json
+  - README.md
+  - LICENSE

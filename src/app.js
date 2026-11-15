@@ -865,7 +865,7 @@ if (typeof document !== "undefined") (async () => {
         });
       }
 
-      navigator.serviceWorker.register("./sw.js").then((reg) => {
+      navigator.serviceWorker.register("../sw.js").then((reg) => {
         // Check immediately so an older cached app can hand off to the new worker.
         reg.update().catch(() => {});
         // Listen for updates on the registration, not navigator.serviceWorker

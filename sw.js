@@ -3,10 +3,12 @@
  * Reliable updates with network-first strategy for critical files
  */
 
-const CACHE_VERSION = 'v7';
+const CACHE_VERSION = 'v8';
 const CRITICAL_FILES = [
   './',
   './index.html',
+  './app/',
+  './app/index.html',
   './src/app.js',
   './src/parser.js',
   './src/i18n.js',

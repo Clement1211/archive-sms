@@ -79,6 +79,8 @@ export default {
   "help.step5.tip": "Astuce : ajoutez l’application à l’écran d’accueil pour y accéder rapidement.",
   "help.warningTitle": "Important :",
   "help.warningBody": "vos SMS restent sur cet appareil. Aucune donnée n’est envoyée vers un serveur.",
+  "footer.site": "Site web",
+  "footer.guides": "Guides",
   "footer.description": "Archives SMS — lecteur de sauvegardes XML",
   "footer.githubAria": "Ouvrir le dépôt GitHub (nouvel onglet)",
   "toast.imported.one": "{{count}} message importé",

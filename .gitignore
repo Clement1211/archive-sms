@@ -6,6 +6,9 @@ node_modules/
 # Build outputs
 build/
 dist/
+_site/
+.bundle/
+vendor/
 *.min.js
 *.min.css
 

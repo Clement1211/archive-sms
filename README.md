@@ -1,6 +1,6 @@
-# Archives SMS
+# Archive SMS
 
-> Une application web progressive (PWA) pour lire localement vos exports XML de **SMS Backup & Restore**.
+> Un lecteur web progressif (PWA) et un site d’aide pour lire localement vos exports XML de **SMS Backup & Restore**.
 
 ## ✨ Fonctionnalités
 
@@ -16,7 +16,9 @@
 ## 📱 Installation
 
 ### Utilisation en ligne
-Rendez-vous sur : [https://clement1211.github.io/archive-sms](https://clement1211.github.io/archive-sms)
+Site public : [https://clement1211.github.io/archive-sms](https://clement1211.github.io/archive-sms)
+
+Lecteur : [https://clement1211.github.io/archive-sms/app/](https://clement1211.github.io/archive-sms/app/)
 
 ### Installation locale
 
@@ -26,12 +28,13 @@ Rendez-vous sur : [https://clement1211.github.io/archive-sms](https://clement121
    cd archive-sms
    ```
 
-2. Lancez un serveur local (nécessaire pour le Service Worker) :
+2. Installez les dépendances Jekyll et démarrez l’aperçu local :
    ```bash
-   python3 -m http.server 8000
+   bundle install
+   bundle exec jekyll serve
    ```
 
-3. Ouvrez votre navigateur à l'adresse : [http://localhost:8000](http://localhost:8000)
+3. Ouvrez le site à l'adresse [http://localhost:4000](http://localhost:4000) ou directement le lecteur à [http://localhost:4000/app/](http://localhost:4000/app/).
 
 ## 📱 Utilisation sur iPhone
 
@@ -46,7 +49,7 @@ Rendez-vous sur : [https://clement1211.github.io/archive-sms](https://clement121
 
 ### Installation sur l'écran d'accueil
 
-1. Ouvrez Safari et rendez-vous sur [https://clement1211.github.io/archive-sms](https://clement1211.github.io/archive-sms)
+1. Ouvrez Safari et rendez-vous sur [le lecteur Archive SMS](https://clement1211.github.io/archive-sms/app/)
 2. Appuyez sur l'icône **Partager** (carré avec flèche vers le haut)
 3. Faites défiler vers le bas et sélectionnez **"Sur l'écran d'accueil"**
 4. Donnez un nom à l'application (ex: "Archives SMS")
@@ -54,7 +57,7 @@ Rendez-vous sur : [https://clement1211.github.io/archive-sms](https://clement121
 
 ### ⚠️ Limites connues sur iOS
 
-- **Stockage limité** : Safari iOS impose une limite de stockage (généralement ~500 Mo - 1 Go) pour les IndexedDB. Les fichiers XML de 230 Mo peuvent atteindre cette limite.
+- **Stockage variable** : l’espace disponible dépend de l’appareil et des limites du navigateur. Gardez de l’espace libre pour l’import et le stockage de l’archive.
 - **Conservation des données** : Le stockage peut être effacé si l'espace est insuffisant ou si vous supprimez l'application du cache.
 - **Fichiers volumineux** : L'import de très grands fichiers peut prendre du temps et consommer beaucoup de mémoire.
 
@@ -90,7 +93,14 @@ Les textes sont regroupés dans le dossier `src/locales/`, avec un fichier par l
 
 ```
 archive-sms/
-├── index.html              # Page principale
+├── index.md                # Page d’accueil publique (Jekyll)
+├── _layouts/site.html      # Gabarit partagé des pages publiques
+├── app/index.html          # Lecteur PWA
+├── en/                     # Pages publiques en anglais
+├── guides/                 # Guides pratiques en français
+├── a-propos/               # Présentation du projet
+├── confidentialite/        # Politique de confidentialité
+├── contact/                # Contact et signalement
 ├── src/
 │   ├── app.js               # Application principale
 │   ├── i18n.js              # Gestion de la langue et des traductions
@@ -99,7 +109,8 @@ archive-sms/
 │   ├── fr.js                # Textes français
 │   └── en.js                # Textes anglais
 ├── styles/
-│   └── styles.css           # Styles de l'application
+│   ├── styles.css           # Styles de l'application
+│   └── site.css             # Styles des pages publiques
 ├── sw.js                   # Service Worker (PWA)
 ├── manifest.webmanifest    # Manifest PWA
 ├── favicon.svg             # Favicon SVG
