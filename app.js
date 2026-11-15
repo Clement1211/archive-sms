@@ -34,6 +34,7 @@ let allMessages = [];
 let chats = [];
 let selected = null;
 let importController = null;
+let pendingReload = false;
 let activeObjectUrls = new Set();
 
 // ============================================
@@ -439,6 +440,10 @@ async function importFile(file) {
     }
   } finally {
     if (importController === abortController) importController = null;
+    if (pendingReload) {
+      pendingReload = false;
+      window.location.reload();
+    }
   }
 }
 
@@ -912,6 +917,11 @@ function setupEventListeners() {
       if (hadController) {
         navigator.serviceWorker.addEventListener("controllerchange", () => {
           if (reloadedForUpdate) return;
+          if (importController) {
+            pendingReload = true;
+            reloadedForUpdate = true;
+            return;
+          }
           reloadedForUpdate = true;
           window.location.reload();
         });
