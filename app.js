@@ -897,7 +897,19 @@ function setupEventListeners() {
 
     // Service Worker registration with update detection
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+      const hadController = Boolean(navigator.serviceWorker.controller);
+      let reloadedForUpdate = false;
+      if (hadController) {
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (reloadedForUpdate) return;
+          reloadedForUpdate = true;
+          window.location.reload();
+        });
+      }
+
       navigator.serviceWorker.register("./sw.js").then((reg) => {
+        // Check immediately so an older cached app can hand off to the new worker.
+        reg.update().catch(() => {});
         // Listen for updates on the registration, not navigator.serviceWorker
         reg.addEventListener('updatefound', () => {
           const newWorker = reg.installing;
